@@ -1,0 +1,11 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "supersed"
+version = "0.1.0"
+description = "An LLM powered super CLI"
+authors = ["Anubhab Chakraborty <anuv@akcanuv.com>"]
+dependencies = []
+[project.scripts]
+supersed = "supersed.supersed:main"

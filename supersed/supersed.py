@@ -4,6 +4,7 @@ import os
 import sys
 import shutil
 import argparse
+import subprocess
 from glob import glob
 import re
 import platform  # Import platform to detect OS
@@ -65,18 +66,30 @@ def read_file_contents(filenames):
 
 def get_instructions_and_files(prompt):
     try:
+        # Run 'tree' and 'pwd' commands to get folder structure and current directory
+        tree_output = subprocess.check_output("tree", shell=True, text=True)
+        pwd_output = subprocess.check_output("pwd", shell=True, text=True)
+        
+        # System message for instructing the assistant
         system_prompt = (
             "You are an assistant that analyzes user instructions and determines the steps needed to accomplish the task."
             " Provide clear sections for 'Files to Modify' and 'Context Files'."
             " Ensure that only the filenames are listed without any additional explanations."
         )
+
+        # User message with prompt, folder structure, and current directory information
         user_prompt = (
             f"Instruction: {prompt}\n\n"
+            "Helpful to understand the folder structure:\n\n"
+            f"Current Directory:\n{pwd_output}\n\n"
+            f"Folder Structure:\n{tree_output}\n\n"
             "Provide a numbered list of steps to accomplish the task.\n"
-            "Under a section called 'Files to Modify', list the filenames that need to be modified with their relative paths.\n"
+            "Under a section called 'Files to Modify', list the filenames that need to be modified with their relative paths. Use the provided output of tree and pwd\n"
             "Under a section called 'Context Files', list filenames that should be used as reference with their relative paths.\n"
             "Do not include any additional explanation."
         )
+
+        # Call to OpenAI API
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
@@ -127,7 +140,7 @@ def process_with_llm(prompt, content, context_contents, filename):
         full_prompt = f"Instruction: {prompt}\n\nContent of {filename} to Modify:\n{content}\n{context_text}"
 
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": (
                     "You are a helpful assistant that edits text files based on user instructions."
@@ -145,23 +158,26 @@ def process_with_llm(prompt, content, context_contents, filename):
 def generate_command_line_solution(prompt):
     try:
         system_prompt = (
-            "You are a command-line assistant. Generate only the bash command using standard tools to accomplish the following task."
-            " Do not include any explanations or code blocks. If it's not possible, respond exactly with 'Cannot generate command-line solution.'"
-            " Ensure that the command is compatible with both GNU sed and BSD sed."
+            "You are a command-line assistant. Generate responses using 'Command:' and 'Explanation:' prefixes."
+            " For each command needed to accomplish the task, start the line with 'Command:'."
+            " For any explanations or descriptions, start the line with 'Explanation:'."
+            " Do not include any other text or formats."
+            " Do not use any code formatting such as backticks or code blocks."
+            " Ensure that the commands are compatible with both GNU sed and BSD sed."
         )
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
             ],
             temperature=0
         )
-        cmd = response.choices[0].message.content.strip()
+        full_response = response.choices[0].message.content.strip()
         # Remove any markdown code blocks if present
-        cmd = re.sub(r'```[a-z]*\n', '', cmd)
-        cmd = re.sub(r'\n```', '', cmd)
-        return cmd
+        full_response = re.sub(r'```[a-z]*\n', '', full_response)
+        full_response = re.sub(r'\n```', '', full_response)
+        return full_response
     except Exception as e:
         print(f"Error generating command-line solution: {e}")
         return "Cannot generate command-line solution."
@@ -170,9 +186,12 @@ def generate_command_line_solution_for_file(prompt, filename):
     full_prompt = f"{prompt} (Target file: {filename})"
     try:
         system_prompt = (
-            "You are a command-line assistant. Generate only the bash command using standard tools to accomplish the following task on the specified file."
-            " Do not include any explanations or code blocks. If it's not possible, respond exactly with 'Cannot generate command-line solution.'"
-            " Ensure that the command is compatible with both GNU sed and BSD sed."
+            "You are a command-line assistant. Generate responses using 'Command:' and 'Explanation:' prefixes."
+            " For each command needed to accomplish the task on the specified file, start the line with 'Command:'."
+            " For any explanations or descriptions, start the line with 'Explanation:'."
+            " Do not include any other text or formats."
+            " Do not use any code formatting such as backticks or code blocks."
+            " Ensure that the commands are compatible with both GNU sed and BSD sed."
         )
         response = client.chat.completions.create(
             model="gpt-4",
@@ -182,11 +201,11 @@ def generate_command_line_solution_for_file(prompt, filename):
             ],
             temperature=0
         )
-        cmd = response.choices[0].message.content.strip()
+        full_response = response.choices[0].message.content.strip()
         # Remove any markdown code blocks if present
-        cmd = re.sub(r'```[a-z]*\n', '', cmd)
-        cmd = re.sub(r'\n```', '', cmd)
-        return cmd
+        full_response = re.sub(r'```[a-z]*\n', '', full_response)
+        full_response = re.sub(r'\n```', '', full_response)
+        return full_response
     except Exception as e:
         print(f"Error generating command-line solution for {filename}: {e}")
         return "Cannot generate command-line solution."
@@ -210,6 +229,24 @@ def adjust_command(cmd):
         replacement = r"sed -i '' '\1'"
         cmd = re.sub(pattern, replacement, cmd)
     return cmd
+
+def execute_commands(full_response):
+    """
+    Parses the LLM response and executes only the commands prefixed with 'Command:'.
+    Ignores any lines starting with 'Explanation:' or other text.
+    Also strips any backticks or extraneous characters from the commands.
+    """
+    commands = []
+    lines = full_response.split('\n')
+    for line in lines:
+        line = line.strip()
+        if line.startswith("Command:"):
+            cmd = line[len("Command:"):].strip()
+            # Remove surrounding backticks if present
+            cmd = cmd.strip('`').strip()
+            if cmd:
+                commands.append(cmd)
+    return commands
 
 def main():
     parser = argparse.ArgumentParser(description='A natural language text editor powered by OpenAI.')
@@ -259,9 +296,18 @@ def main():
     cmd = generate_command_line_solution(prompt)
     cmd = adjust_command(cmd)  # Adjust the command based on OS
 
+    # Execute commands if a solution was generated
     if "Cannot generate command-line solution." not in cmd and cmd:
-        print(f"Executing command: {cmd}")
-        os.system(cmd)
+        print("Executing command(s):")
+        commands = cmd.splitlines()
+        for command in commands:
+            command = command.strip()
+            # Process only lines that start with "Command:"
+            if command.startswith("Command:"):
+                actual_command = command.replace("Command:", "").strip()
+                print(f"Executing: {actual_command}")
+                # Execute command in the correct directory
+                os.system(actual_command.replace("cd test && ", ""))
     else:
         # Attempt to generate command-line solutions per file
         for file in files_to_modify:
@@ -269,7 +315,7 @@ def main():
             cmd = adjust_command(cmd)  # Adjust the command based on OS
             if "Cannot generate command-line solution." not in cmd and cmd:
                 print(f"Executing command on {file}: {cmd}")
-                # Replace placeholder with actual filename if needed
+                # Replace placeholders and use file paths directly
                 cmd = cmd.replace("[filename]", file).replace("<filename>", file)
                 os.system(cmd)
             else:
