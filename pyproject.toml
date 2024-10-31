@@ -1,11 +1,27 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
 [project]
 name = "supersed"
 version = "0.1.0"
 description = "An LLM powered super CLI"
-authors = ["Anubhab Chakraborty <anuv@akcanuv.com>"]
-dependencies = []
-[project.scripts]
+readme = "README.md"
+license = { text = "MIT" }  # Replace "MIT" with your actual license
+requires-python = ">=3.6"
+authors = [
+  { name = "Anubhab Chakraborty", email = "anuv@akcanuv.com" }
+]
+dependencies = [
+  # List your dependencies here, e.g.,
+  # "requests>=2.25.1",
+  # "numpy>=1.19.5"
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent"
+]
+
+[project.entry-points.console_scripts]
 supersed = "supersed.supersed:main"
