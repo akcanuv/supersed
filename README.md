@@ -1,6 +1,7 @@
 # supersed
+<img src="https://github.com/user-attachments/assets/274e9a0f-75f0-4900-a453-c0b97f8593f0" width="300" />
 
-**supersed** is a natural language-powered text editor that leverages LLMs to perform various text manipulations based on user instructions. Simplify your workflow by managing and editing your text files using plain English commands. No more googling for the right commands!
+**supersed** is a natural language-powered file editor that leverages LLMs to perform various file manipulations on txt or txt-like files based on user instructions. Simplify your workflow by managing and editing your text files using plain English commands. No more googling for the right commands!
 
 ## Features
 
