@@ -81,10 +81,10 @@ def get_instructions_and_files(prompt):
         user_prompt = (
             f"Instruction: {prompt}\n\n"
             "Helpful to understand the folder structure:\n\n"
-            f"Current Directory:\n{pwd_output}\n\n"
-            f"Folder Structure:\n{tree_output}\n\n"
+            # f"Current Directory:\n{pwd_output}\n\n" 
+            # f"Folder Structure:\n{tree_output}\n\n" # exceeding max context length
             "Provide a numbered list of steps to accomplish the task.\n"
-            "Under a section called 'Files to Modify', list the filenames that need to be modified with their relative paths. Use the provided output of tree and pwd\n"
+            "Under a section called 'Files to Modify', list the filenames that need to be modified with their relative paths.\n"
             "Under a section called 'Context Files', list filenames that should be used as reference with their relative paths.\n"
             "Do not include any additional explanation."
         )
