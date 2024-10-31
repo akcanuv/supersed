@@ -15,7 +15,7 @@
 1. **Clone the Repository:**
    ```
    bash
-   git clone https://github.com/yourusername/supersed.git
+   git clone https://github.com/akcanuv/supersed.git
    cd supersed
    ```
 
@@ -117,7 +117,6 @@ Restore all backed-up files:
 
 - File Patterns: Use glob patterns to specify target files. For recursive searches, use patterns like **/*.txt.
 - Safety: Always ensure you have backups of important files. Use the save command to create a new backup point after satisfactory changes.
-- Compatibility: The script adjusts sed commands based on your operating system to ensure compatibility.
 
 ## License
 
