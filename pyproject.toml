@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "supersed"
-version = "0.1.0"
+version = "0.1.1"
 description = "An LLM powered super CLI"
 readme = "README.md"
 license = { text = "MIT" }  # Replace "MIT" with your actual license
@@ -13,9 +13,7 @@ authors = [
   { name = "Anubhab Chakraborty", email = "anuv@akcanuv.com" }
 ]
 dependencies = [
-  # List your dependencies here, e.g.,
-  # "requests>=2.25.1",
-  # "numpy>=1.19.5"
+  "openai>=1.53.0"
 ]
 classifiers = [
   "Programming Language :: Python :: 3",
