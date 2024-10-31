@@ -249,7 +249,7 @@ def execute_commands(full_response):
     return commands
 
 def main():
-    parser = argparse.ArgumentParser(description='A natural language text editor powered by OpenAI.')
+    parser = argparse.ArgumentParser(description='A natural language text editor powered by LLM.')
     parser.add_argument('command', nargs='+', help='The command to execute.')
     parser.add_argument('-f', '--files', nargs='*', help='Specific files or patterns to process. Use "**/*.txt" for recursive patterns.')
     args = parser.parse_args()
