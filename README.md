@@ -12,22 +12,22 @@
 
 ## Installation
 
-1. **Clone the Repository:**
+1. **Use PyPI package:**
+If you simply want to use `supersed`, install it from PyPI using.
+
+   ```
+   pip install supersed
+   ```
+3. **Clone the Repository:**
+If you would like to contribute to `supersed`, consider cloning the github directory.
+
    ```
    bash
    git clone https://github.com/akcanuv/supersed.git
    cd supersed
+   pip install -e .
    ```
-
-2.	**Install Dependencies:**
-Ensure you have Python 3 installed. Then, install the required Python packages:
-
-    ```
-  	pip install openai
-    ```
-
-
-4.	**Set Up OpenAI API Key:**
+5.	**Set Up OpenAI API Key:**
 Obtain your OpenAI API key from OpenAI and set it as an environment variable:
 - Linux/macOS:
 ```export OPENAI_API_KEY='your-api-key-here'```
@@ -38,48 +38,11 @@ Obtain your OpenAI API key from OpenAI and set it as an environment variable:
 
 ## Usage
 
-Make the script executable (if not already):
-
-```
-chmod +x supersed.py
-```
-
 Run the script with your desired command:
 
 ```
-./supersed.py "your instruction here" -f [file_patterns]
+supersed "your instruction here" -f [file_patterns]
 ```
-
-### Examples
-
-1. Update the README.md by Reviewing supersed.py:
-
-```
-./supersed.py "update the readme file by reviewing the code in supersed.py" -f README.md
-```
-
-
-2. Remove All Blank Spaces in Text Files Within test_files Directory:
-
-```
-./supersed.py "remove all the blank spaces in the text files in test_files directory" -f "test_files/**/*.txt"
-```
-
-
-3. Save Current File Versions to Backup:
-
-```
-./supersed.py save -f "*.txt"
-```
-
-
-4. Restore Files from Backup:
-
-```
-./supersed.py restore
-```
-
-
 
 ## Commands
 
@@ -87,7 +50,7 @@ Run the script with your desired command:
 Provide an instruction and specify target files using -f:
 
 ```
-./supersed.py "your instruction" -f "file_pattern"
+supersed "your instruction" -f "file_pattern"
 ```
 
 
@@ -95,7 +58,7 @@ Provide an instruction and specify target files using -f:
 Backup specified files:
 
 ```
-./supersed.py save -f "file_pattern"
+supersed save -f "file_pattern"
 ```
 
 
@@ -103,10 +66,37 @@ Backup specified files:
 Restore all backed-up files:
 
 ```
-./supersed.py restore
+supersed restore
+```
+
+### Examples
+
+1. Update the README.md by Reviewing supersed.py:
+
+```
+supersed "update the readme file by reviewing the code in supersed.py" -f README.md
 ```
 
 
+2. Remove All Blank Spaces in Text Files Within test_files Directory:
+
+```
+supersed "remove all the blank spaces in the text files in test_files directory" -f "test_files/**/*.txt"
+```
+
+
+3. Save Current File Versions to Backup:
+
+```
+supersed save -f "*.txt"
+```
+
+
+4. Restore Files from Backup:
+
+```
+supersed restore
+```
 
 ## Backup and Restore
 
