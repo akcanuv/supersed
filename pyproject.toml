@@ -23,5 +23,8 @@ classifiers = [
   "Operating System :: OS Independent"
 ]
 
+[project.urls]
+homepage = "https://github.com/akcanuv/supersed"
+
 [project.entry-points.console_scripts]
 supersed = "supersed.supersed:main"
