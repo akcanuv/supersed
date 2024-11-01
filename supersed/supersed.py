@@ -122,7 +122,7 @@ def parse_plan(plan, scope=None):
 
     # Ensure scope is a single path, not a list
     if isinstance(scope, list):
-        scope = scope[0] if scope else None
+        scope = scope[0] if scope else "."
 
     # Split the plan into lines
     lines = plan.split('\n')
@@ -148,24 +148,37 @@ def parse_plan(plan, scope=None):
         if current_section == 'plan':
             instructions += line + "\n"
         elif current_section == 'modify':
-            extracted_files = execute_find_command(line, scope)
+            # Handle cases where Files to Modify is explicitly marked as empty
+            if line.lower() == '- none':
+                continue
+            extracted_files = execute_find_command(line, scope) if line else []
             files_to_modify.extend(extracted_files)
         elif current_section == 'context':
-            extracted_files = execute_find_command(line, scope)
+            # Handle cases where Context Files is explicitly marked as empty
+            if line.lower() == '- none':
+                continue
+            extracted_files = execute_find_command(line, scope) if line else []
             context_files.extend(extracted_files)
         elif current_section == 'execute':
             execution_table += line + "\n"
 
-    # Return parsed elements
+    # Return parsed elements, ensure deduplication and clean formatting
     return list(set(files_to_modify)), list(set(context_files)), instructions.strip(), execution_table.strip()
 
-def execute_find_command(command_line, scope=None):
+def execute_find_command(command_line, scope="."):
     """Executes a shell command to list files within the specified scope and returns the output as a list of filenames."""
     try:
+        # Check for 'None (new files will be created)' or invalid command lines and skip execution
+        if "None (new files will be created)" in command_line:
+            print(f"No existing files.")
+            return []
+        # Only proceed if command_line is valid and contains 'find'
+        if not command_line or "find" not in command_line:
+            print(f"Skipping invalid command: {command_line}")
+            return []
+
         # Modify the find command to start from the scope directory if specified
-        if scope:
-            # Insert scope as the starting directory for find
-            command_line = command_line.replace("find", f"find {scope}", 1)
+        command_line = command_line.replace("find", f"find {scope}", 1)
         
         # Execute the command and capture the output
         result = subprocess.run(command_line, shell=True, text=True, capture_output=True, check=True)
@@ -185,6 +198,8 @@ def process_llm_instruction(command, context_contents):
     instruction_match = re.search(r"<instruction>{(.+?)}", command)
     files_to_modify_match = re.search(r"<files_to_modify>{(.+?)}", command)
     context_files_match = re.search(r"<context_files>{(.+?)}", command)
+
+    print("Sanity Check:", instruction_match, files_to_modify_match, context_files_match)
 
     # Get the instruction text
     instruction = instruction_match.group(1) if instruction_match else ""
@@ -325,7 +340,7 @@ def adjust_command(cmd):
 
 def execute_commands(full_response):
     """
-    Parses the LLM response and executes only the commands prefixed with 'Command:'.
+    Parses the LLM response and executes only the commands prefixed with 'COMMAND:'.
     Ignores any lines starting with 'Explanation:' or other text.
     Also strips any backticks or extraneous characters from the commands.
     """
@@ -333,8 +348,8 @@ def execute_commands(full_response):
     lines = full_response.split('\n')
     for line in lines:
         line = line.strip()
-        if line.startswith("Command:"):
-            cmd = line[len("Command:"):].strip()
+        if line.startswith("COMMAND:"):
+            cmd = line[len("COMMAND:"):].strip()
             # Remove surrounding backticks if present
             cmd = cmd.strip('`').strip()
             if cmd:
@@ -344,7 +359,10 @@ def execute_commands(full_response):
 def main():
     parser = argparse.ArgumentParser(description='A natural language text editor powered by LLM.')
     parser.add_argument('command', nargs='+', help='The command to execute.')
-    parser.add_argument('-s', '--scope', nargs='*', help='Limit the scope of context and file modifications. Use "**/*.txt" for recursive patterns.')
+    parser.add_argument(
+        '-s', '--scope', nargs='*', default=['.'],
+        help='Limit the scope of file modifications. Use "**/*.txt" for recursive patterns.'
+    )
     args = parser.parse_args()
 
     # Handle restore and save commands
@@ -365,20 +383,40 @@ def main():
     # Get plan, file change manifest, and instructions from LLM
     plan = get_instructions_and_files(prompt, args.scope)
     print("Plan received from LLM:")
+    print(plan)
     
     # Parse the plan to extract files to modify and context files
     files_to_modify, context_files, instructions, execution_table = parse_plan(plan, scope=args.scope)
-    # Print the parsed output for verification
-    print("Files to Modify:", files_to_modify)  
-    print("Context Files:", context_files)
-    print("Instructions:", instructions)
-    print("Execution Table:", execution_table)
     
-    print("files to modify after parse_plan", files_to_modify)
+    # Print the parsed output for verification
+    print("Files to Modify:")
+    if files_to_modify:
+        for file in files_to_modify:
+            print(f"{file}")
+    else:
+        print("None (no files to modify)")
+
+    print("\nContext Files:")
+    if context_files:
+        for file in context_files:
+            print(f"{file}")
+    else:
+        print("None (no context files)")
+
+    print("\nInstructions:")
+    if instructions:
+        print(f"{instructions}")
+    else:
+        print("None (no instructions provided)")
+
+    print("\nExecution Table:")
+    if execution_table:
+        print(f"{execution_table}")
+    else:
+        print("None (no execution commands provided)")
 
     if not files_to_modify:
-        print("No target files match the specified scope.")
-        sys.exit(1)
+        print("No target files match the specified scope or the files do not exist.")
 
     # Only create backup if it doesn't already exist
     backup_files(files_to_modify)
@@ -402,7 +440,7 @@ def main():
             actual_command = command.replace("COMMAND:", "").strip()
             print(f"Executing: {actual_command} in directory: {base_directory}")
             # Execute command in the determined base directory
-            os.system(f"cd {base_directory} && {actual_command}")
+            os.system(f"{actual_command}")
 
         # Process lines that start with "LLM:"
         elif command.startswith("LLM:"):
