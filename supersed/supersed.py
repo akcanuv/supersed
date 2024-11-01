@@ -28,7 +28,7 @@ def backup_files(files, force=False):
             shutil.copy(file, backup_path)
         print("Backup created.")
     else:
-        print("Backup already exists. Use 'supersed save' to update the backup.")
+        print("\nBackup already exists. Use 'supersed save' to update the backup.")
 
 def save_backup(files):
     backup_dir = os.path.join(os.getcwd(), '.backup')
@@ -36,12 +36,12 @@ def save_backup(files):
         backup_path = os.path.join(backup_dir, file)
         os.makedirs(os.path.dirname(backup_path), exist_ok=True)
         shutil.copy(file, backup_path)
-    print("Backup updated with current file versions.")
+    print("\nBackup updated with current file versions.")
 
 def restore_files():
     backup_dir = os.path.join(os.getcwd(), '.backup')
     if not os.path.exists(backup_dir):
-        print("No backup found to restore.")
+        print("\nNo backup found to restore.")
         return
     for root, _, files in os.walk(backup_dir):
         for file in files:
@@ -49,7 +49,7 @@ def restore_files():
             relative_path = os.path.relpath(backup_file, backup_dir)
             os.makedirs(os.path.dirname(relative_path), exist_ok=True)
             shutil.copy(backup_file, relative_path)
-    print("Files restored from backup.")
+    print("\nFiles restored from backup.")
 
 def extract_filenames_from_text(text):
     # Improved regex to find filenames with paths (e.g., test_files/file1.txt)
@@ -81,7 +81,7 @@ def get_instructions_and_files(prompt, scope):
             "Example 3: 'LLM: For each file in <context_files>{'001.txt', '002.txt', '003.txt',...}, run <instruction>{'Correct the grammatical errors in the provided text and provide just the updated test. Do not include any additional explanation.'} and replace the contexts in <files_to_modify>{'001.txt', '002.txt', '003.txt',...}.\n"
             "When processing more than one file with LLM, modify the <instruction> assuming it is only acting on one file at a time, so it should not reference any files in <instruction>.\n"
             "<context_files> and <files_to_modify> may be a `find` command for user instructions such as a file pattern or when 'all files' is mentioned"
-            "Provide clear sections for 'Plan', 'Files to Modify', 'Context Files' and 'Execution Table'.\n" 
+            "Provide clear sections for 'Plan', 'Files to Modify', 'Context Files' and 'Execution Table'. Do not enclose the sections with markdown code blocks.\n" 
             "Do not include any additional explanation."
         )
 
@@ -127,7 +127,6 @@ def parse_plan(plan, scope=None):
 
     # Split the plan into lines
     lines = plan.split('\n')
-
     for line in lines:
         line = line.strip()
 
@@ -144,7 +143,6 @@ def parse_plan(plan, scope=None):
         elif line.lower() == 'execution table:' or line.lower().startswith('execution table'):
             current_section = 'execute'
             continue
-
         # Add content based on section
         if current_section == 'plan':
             instructions += line + "\n"
@@ -162,7 +160,6 @@ def parse_plan(plan, scope=None):
             context_files.extend(extracted_files)
         elif current_section == 'execute':
             execution_table += line + "\n"
-
     # Return parsed elements, ensure deduplication and clean formatting
     return list(set(files_to_modify)), list(set(context_files)), instructions.strip(), execution_table.strip()
 
