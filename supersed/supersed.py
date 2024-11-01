@@ -80,6 +80,7 @@ def get_instructions_and_files(prompt, scope):
             "Example 2: 'LLM: <instruction>{'Extract the details of the project from README.md and the dependencies from requirements.txt and \populate the fields in pyproject.toml'} of <files_to_modify>{'./pyproject.toml'} using information in <context_files>{'./pyproject.toml', './README.md', './requirements.txt'}.'\n" 
             "Example 3: 'LLM: For each file in <context_files>{'001.txt', '002.txt', '003.txt',...}, run <instruction>{'Correct the grammatical errors in the provided text and provide just the updated test. Do not include any additional explanation.'} and replace the contexts in <files_to_modify>{'001.txt', '002.txt', '003.txt',...}.\n"
             "When processing more than one file with LLM, modify the <instruction> assuming it is only acting on one file at a time, so it should not reference any files in <instruction>.\n"
+            "<context_files> and <files_to_modify> may be a `find` command for user instructions such as a file pattern or when 'all files' is mentioned"
             "Provide clear sections for 'Plan', 'Files to Modify', 'Context Files' and 'Execution Table'.\n" 
             "Do not include any additional explanation."
         )
@@ -166,19 +167,15 @@ def parse_plan(plan, scope=None):
     return list(set(files_to_modify)), list(set(context_files)), instructions.strip(), execution_table.strip()
 
 def execute_find_command(command_line, scope="."):
-    """Executes a shell command to list files within the specified scope and returns the output as a list of filenames."""
     try:
-        # Check for 'None (new files will be created)' or invalid command lines and skip execution
-        if "None (new files will be created)" in command_line:
-            print(f"No existing files.")
-            return []
         # Only proceed if command_line is valid and contains 'find'
         if not command_line or "find" not in command_line:
             print(f"Skipping invalid command: {command_line}")
             return []
-
-        # Modify the find command to start from the scope directory if specified
-        command_line = command_line.replace("find", f"find {scope}", 1)
+        
+        # Check if command_line starts with "COMMAND:" and modify it to start from the scope directory
+        if command_line.startswith("COMMAND:"):
+            command_line = command_line.replace("COMMAND: find", f"find", 1).strip()
         
         # Execute the command and capture the output
         result = subprocess.run(command_line, shell=True, text=True, capture_output=True, check=True)
@@ -190,23 +187,44 @@ def execute_find_command(command_line, scope="."):
         return [file for file in files if file]
     except subprocess.CalledProcessError as e:
         print(f"Error executing command: {command_line}")
-        print(e)
+        print(e.stderr)  # Output the error message for debugging
         return []
 
 def process_llm_instruction(command, context_contents):
     # Extract the main instruction, files to modify, and context files
-    instruction_match = re.search(r"<instruction>{(.+?)}", command)
-    files_to_modify_match = re.search(r"<files_to_modify>{(.+?)}", command)
-    context_files_match = re.search(r"<context_files>{(.+?)}", command)
+    instruction_match = re.search(r"<instruction>\{(.+?)\}", command)
+    files_to_modify_match = re.search(r"<files_to_modify>\{(.+?)\}", command)
+    context_files_match = re.search(r"<context_files>\{(.+?)\}", command)
 
-    print("Sanity Check:", instruction_match, files_to_modify_match, context_files_match)
+    print("WATCH: ", files_to_modify_match)
+    print("WATCH: ", context_files_match)
 
     # Get the instruction text
     instruction = instruction_match.group(1) if instruction_match else ""
     
-    # Get lists of files from the matches, splitting by comma and stripping whitespace
-    files_to_modify = [file.strip().strip("'\"") for file in files_to_modify_match.group(1).split(",")] if files_to_modify_match else []
-    context_files = [file.strip().strip("'\"") for file in context_files_match.group(1).split(",")] if context_files_match else []
+    # Process files to modify, handling both direct lists and `find` commands
+    if files_to_modify_match:
+        files_to_modify_content = files_to_modify_match.group(1).strip()
+        if files_to_modify_content.startswith("find "):
+            # Execute find command to get list of files
+            files_to_modify = execute_find_command(files_to_modify_content)
+        else:
+            # Parse files as a comma-separated list
+            files_to_modify = [file.strip().strip("'\"") for file in files_to_modify_content.split(",")]
+    else:
+        files_to_modify = []
+
+    # Process context files, handling both direct lists and `find` commands
+    if context_files_match:
+        context_files_content = context_files_match.group(1).strip()
+        if context_files_content.startswith("find "):
+            # Execute find command to get list of files
+            context_files = execute_find_command(context_files_content)
+        else:
+            # Parse files as a comma-separated list
+            context_files = [file.strip().strip("'\"") for file in context_files_content.split(",")]
+    else:
+        context_files = []
 
     # Execute LLM calls for each file to modify
     for file in files_to_modify:
@@ -384,12 +402,13 @@ def main():
     plan = get_instructions_and_files(prompt, args.scope)
     print("Plan received from LLM:")
     print(plan)
-    
+    print("\n")
     # Parse the plan to extract files to modify and context files
     files_to_modify, context_files, instructions, execution_table = parse_plan(plan, scope=args.scope)
-    
+    print("\n")
     # Print the parsed output for verification
-    print("Files to Modify:")
+    print("Files to Modify:\n")
+    print("Plan parsed: \n")
     if files_to_modify:
         for file in files_to_modify:
             print(f"{file}")
