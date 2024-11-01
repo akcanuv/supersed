@@ -64,28 +64,34 @@ def read_file_contents(filenames):
                 contents[filename] = f.read()
     return contents
 
-def get_instructions_and_files(prompt):
+def get_instructions_and_files(prompt, scope):
     try:
-        # Run 'tree' and 'pwd' commands to get folder structure and current directory
-        tree_output = subprocess.check_output("tree", shell=True, text=True)
-        pwd_output = subprocess.check_output("pwd", shell=True, text=True)
         
         # System message for instructing the assistant
         system_prompt = (
-            "You are an assistant that analyzes user instructions and determines the steps needed to accomplish the task."
-            " Provide clear sections for 'Files to Modify' and 'Context Files'."
-            " Ensure that only the filenames are listed without any additional explanations."
+            "You are supersed, a tool that analyzes user instructions and determines the steps needed to accomplish the task."
+            "Under a section called 'Plan', provide a numbered list of steps to accomplish the task.\n"
+            "Under a section called 'Files to Modify', provide an appropriate command using the scope that will display the relevant files needed to be modified when parsed, use `find`.\n" 
+            "Under a section called 'Context Files', provide an appropriate command using the scope that will display the relevant files needed to be read for context when parsed, use `find`. Files that are to be updated must also be included in the context.\n" 
+            "Under a section called 'Execution Table' provide a single step or a sequence of steps to be executed sequentially either with a `COMMAND: ` or an `LLM: ` prefix. \
+            The 'COMMAND: ' prefix should be followed by the command to run using a CLI tool. \
+            The COMMAND statements may include creation, deletion, copying, moving, executing and in-place modification of files within the given scope. \
+            Example 1: 'COMMAND: sed -i '' '/^$/d; s/^[QA]: //' test/example_1.txt' \
+            The 'LLM ' prefix should be followed by a generated prompt which is <instruction> to modify the required files. \
+            The instructions, files_to_modify, context_files must be clearly seperated using <tags> followed by '{}'. The tags will be used to parse the message to be sent to the model. \
+            They should be in a readable format such as: 'LLM 'Carry out the <instruction>{instruction} to modify the contents of <files_to_modify>{files_to_modify} using information in <context_files>{context_files}.''\n \
+            Example 2: 'LLM: <instruction>{'Extract the details of the project from README.md and the dependencies from requirements.txt and \populate the fields in pyproject.toml'} of <files_to_modify>{'./pyproject.toml'} using information in <context_files>{'./pyproject.toml', './README.md', './requirements.txt'}.' \
+            Example 3: 'LLM: For each file in <context_files>{'001.txt', '002.txt', '003.txt',...}, run <instruction>{'Correct the grammatical errors in the provided text and provide just the updated test. Do not include any additional explanation.'} and replace the contexts in <files_to_modify>{'001.txt', '002.txt', '003.txt',...}."
+            "Provide clear sections for 'Plan', 'Files to Modify', 'Context Files' and 'Execution Table'." 
+            "Do not include any additional explanation."
         )
 
-        # User message with prompt, folder structure, and current directory information
+        # User message with prompt and scope of execution
         user_prompt = (
             f"Instruction: {prompt}\n\n"
-            "Helpful to understand the folder structure:\n\n"
-            # f"Current Directory:\n{pwd_output}\n\n" 
-            # f"Folder Structure:\n{tree_output}\n\n" # exceeding max context length
-            "Provide a numbered list of steps to accomplish the task.\n"
-            "Under a section called 'Files to Modify', list the filenames that need to be modified with their relative paths.\n"
-            "Under a section called 'Context Files', list filenames that should be used as reference with their relative paths.\n"
+            f"Scope: {scope}\n"
+            "Scope determines the extent to which supersed has file access, it may be a file or a directory, or pattern, Default scope is '.' - the entire file tree of current working directory.\n"
+            "Provide clear sections for 'Plan', 'Files to Modify', 'Context Files' and 'Execution Table'.\n" 
             "Do not include any additional explanation."
         )
 
@@ -251,14 +257,14 @@ def execute_commands(full_response):
 def main():
     parser = argparse.ArgumentParser(description='A natural language text editor powered by LLM.')
     parser.add_argument('command', nargs='+', help='The command to execute.')
-    parser.add_argument('-f', '--files', nargs='*', help='Specific files or patterns to process. Use "**/*.txt" for recursive patterns.')
+    parser.add_argument('-s', '--scope', nargs='*', help='Limit the scope of context and file modifications. Use "**/*.txt" for recursive patterns.')
     args = parser.parse_args()
 
     if 'restore' in args.command:
         restore_files()
         sys.exit(0)
     elif 'save' in args.command:
-        files = get_target_files(args.files)
+        files = get_target_files(args.scope)
         if not files:
             print("No target files found to save.")
             sys.exit(1)
@@ -267,18 +273,19 @@ def main():
 
     prompt = ' '.join(args.command)
 
-    # Get plan and files from LLM
-    plan = get_instructions_and_files(prompt)
+    # Get plan, file change manifest, instruction set from LLM
+    plan = get_instructions_and_files(prompt, args.scope)
     print("Plan received from LLM:")
     print(plan)
-
+    
+    exit
     # Parse plan to get files to modify and context files
     files_to_modify, context_files, plan = parse_plan(plan)
 
     # Combine files from command line arguments and plan
-    if args.files:
+    if args.scope:
         files = []
-        for pattern in args.files:
+        for pattern in args.scope:
             files.extend(glob(pattern, recursive=True))
         files_to_modify = files  # Override files to modify with those specified in arguments
 
