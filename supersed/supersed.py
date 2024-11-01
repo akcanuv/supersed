@@ -5,7 +5,7 @@ import sys
 import shutil
 import argparse
 import subprocess
-from glob import glob
+import glob
 import re
 import platform  # Import platform to detect OS
 
@@ -112,13 +112,17 @@ def extract_filenames_from_text(line):
     # Extracts filenames from a line of text by searching for patterns like file paths
     return re.findall(r'[./\w-]+(?:\.\w+)?', line)
 
-def parse_plan(plan):
+def parse_plan(plan, scope=None):
     # Initialize lists for sections
     files_to_modify = []
     context_files = []
     instructions = ""
     execution_table = ""
     current_section = None
+
+    # Ensure scope is a single path, not a list
+    if isinstance(scope, list):
+        scope = scope[0] if scope else None
 
     # Split the plan into lines
     lines = plan.split('\n')
@@ -144,16 +148,70 @@ def parse_plan(plan):
         if current_section == 'plan':
             instructions += line + "\n"
         elif current_section == 'modify':
-            extracted = extract_filenames_from_text(line)
-            files_to_modify.extend(extracted)
+            extracted_files = execute_find_command(line, scope)
+            files_to_modify.extend(extracted_files)
         elif current_section == 'context':
-            extracted = extract_filenames_from_text(line)
-            context_files.extend(extracted)
+            extracted_files = execute_find_command(line, scope)
+            context_files.extend(extracted_files)
         elif current_section == 'execute':
             execution_table += line + "\n"
 
     # Return parsed elements
     return list(set(files_to_modify)), list(set(context_files)), instructions.strip(), execution_table.strip()
+
+def execute_find_command(command_line, scope=None):
+    """Executes a shell command to list files within the specified scope and returns the output as a list of filenames."""
+    try:
+        # Modify the find command to start from the scope directory if specified
+        if scope:
+            # Insert scope as the starting directory for find
+            command_line = command_line.replace("find", f"find {scope}", 1)
+        
+        # Execute the command and capture the output
+        result = subprocess.run(command_line, shell=True, text=True, capture_output=True, check=True)
+        
+        # Split the output by lines to get individual file paths
+        files = result.stdout.strip().split('\n')
+        
+        # Filter out any empty strings in case there are blank lines in the output
+        return [file for file in files if file]
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing command: {command_line}")
+        print(e)
+        return []
+
+def process_llm_instruction(command, context_contents):
+    # Extract the main instruction, files to modify, and context files
+    instruction_match = re.search(r"<instruction>{(.+?)}", command)
+    files_to_modify_match = re.search(r"<files_to_modify>{(.+?)}", command)
+    context_files_match = re.search(r"<context_files>{(.+?)}", command)
+
+    # Get the instruction text
+    instruction = instruction_match.group(1) if instruction_match else ""
+    
+    # Get lists of files from the matches, splitting by comma and stripping whitespace
+    files_to_modify = [file.strip().strip("'\"") for file in files_to_modify_match.group(1).split(",")] if files_to_modify_match else []
+    context_files = [file.strip().strip("'\"") for file in context_files_match.group(1).split(",")] if context_files_match else []
+
+    # Execute LLM calls for each file to modify
+    for file in files_to_modify:
+        if os.path.isfile(file):
+            # Read the content of the file to modify
+            with open(file, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # Gather context contents based on specified context files
+            context_data = {cf: context_contents.get(cf, "") for cf in context_files}
+
+            # Call the LLM with the parsed instruction, content, and context
+            edited_content = process_with_llm(instruction, content, context_data)
+            
+            # Write the modified content back to the file
+            with open(file, 'w', encoding='utf-8') as f:
+                f.write(edited_content)
+            print(f"Processed file with LLM: {file}")
+        else:
+            print(f"File not found: {file}")
 
 def process_with_llm(prompt, content, context_contents):
     try:
@@ -289,6 +347,7 @@ def main():
     parser.add_argument('-s', '--scope', nargs='*', help='Limit the scope of context and file modifications. Use "**/*.txt" for recursive patterns.')
     args = parser.parse_args()
 
+    # Handle restore and save commands
     if 'restore' in args.command:
         restore_files()
         sys.exit(0)
@@ -300,47 +359,47 @@ def main():
         save_backup(files)
         sys.exit(0)
 
+    # Combine command line arguments into a prompt
     prompt = ' '.join(args.command)
 
-    # Get plan, file change manifest, instruction set from LLM
+    # Get plan, file change manifest, and instructions from LLM
     plan = get_instructions_and_files(prompt, args.scope)
     print("Plan received from LLM:")
-    print(plan)
     
-    # Parse plan to get files to modify and context files
-    files_to_modify, context_files, instructions, execution_table = parse_plan(plan)
-
-    # Combine files from command line arguments and plan
-    if args.scope:
-        files = []
-        for pattern in args.scope:
-            files.extend(glob(pattern, recursive=True))
-        files_to_modify = files  # Override files to modify with those specified in arguments
+    # Parse the plan to extract files to modify and context files
+    files_to_modify, context_files, instructions, execution_table = parse_plan(plan, scope=args.scope)
+    # Print the parsed output for verification
+    print("Files to Modify:", files_to_modify)  
+    print("Context Files:", context_files)
+    print("Instructions:", instructions)
+    print("Execution Table:", execution_table)
+    
+    print("files to modify after parse_plan", files_to_modify)
 
     if not files_to_modify:
-        print("No target files specified to modify.")
+        print("No target files match the specified scope.")
         sys.exit(1)
 
-    # Only create backup if it doesn't exist
+    # Only create backup if it doesn't already exist
     backup_files(files_to_modify)
 
-    # Try to generate a global command-line solution first
-    cmd = generate_command_line_solution(prompt)
-    cmd = adjust_command(cmd)  # Adjust the command based on OS
+    # Read contents of context files for use with LLM processing
+    context_contents = read_file_contents(context_files)
 
-    print("Executing command(s):")
-    commands = cmd.splitlines()
+    print("Executing command(s) from LLM instructions:")
+
+    # Process commands based on the execution table
+    commands = execution_table.splitlines()
 
     # Determine base directory from scope, default to current directory if not specified
     base_directory = args.scope[0] if args.scope else "."
     base_directory = os.path.dirname(base_directory) if os.path.isfile(base_directory) else base_directory
-
     for command in commands:
         command = command.strip()
-
-        # Process lines that start with "Command:"
-        if command.startswith("Command:"):
-            actual_command = command.replace("Command:", "").strip()
+        
+        # Process lines that start with "COMMAND:"
+        if command.startswith("COMMAND:"):
+            actual_command = command.replace("COMMAND:", "").strip()
             print(f"Executing: {actual_command} in directory: {base_directory}")
             # Execute command in the determined base directory
             os.system(f"cd {base_directory} && {actual_command}")
@@ -350,25 +409,8 @@ def main():
             llm_instruction = command.replace("LLM:", "").strip()
             print(f"Processing with LLM: {llm_instruction}")
 
-            # Extract files to modify and context files from the instruction
-            files_to_modify = files_to_modify if files_to_modify else []
-            context_contents = read_file_contents(context_files)
-
-            # Execute LLM calls for each file to modify
-            for file in files_to_modify:
-                if os.path.isfile(file):
-                    with open(file, 'r', encoding='utf-8') as f:
-                        content = f.read()
-
-                    # Call the LLM with the instruction, content, and context
-                    edited_content = process_with_llm(llm_instruction, content, context_contents)
-                    
-                    # Write the modified content back to the file
-                    with open(file, 'w', encoding='utf-8') as f:
-                        f.write(edited_content)
-                    print(f"Processed file with LLM: {file}")
-                else:
-                    print(f"File not found: {file}")
+            # Use the new helper function to parse and execute the LLM instruction
+            process_llm_instruction(llm_instruction, context_contents)
 
 if __name__ == "__main__":
     main()
