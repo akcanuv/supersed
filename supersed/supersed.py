@@ -7,7 +7,7 @@ import argparse
 import subprocess
 import glob
 import re
-import platform  # Import platform to detect OS
+import platform  
 
 # Import OpenAI client
 from openai import OpenAI
@@ -284,61 +284,6 @@ def process_with_llm(prompt, content, context_contents):
         print(f"Error processing with LLM: {e}")
         return content  # Return original content if there's an error
 
-def generate_command_line_solution(prompt):
-    try:
-        system_prompt = (
-            "You are a command-line assistant. Generate responses using 'Command:' and 'Explanation:' prefixes."
-            " For each command needed to accomplish the task, start the line with 'Command:'."
-            " For any explanations or descriptions, start the line with 'Explanation:'."
-            " Do not include any other text or formats."
-            " Do not use any code formatting such as backticks or code blocks."
-            " Ensure that the commands are compatible with both GNU sed and BSD sed."
-        )
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0
-        )
-        full_response = response.choices[0].message.content.strip()
-        # Remove any markdown code blocks if present
-        full_response = re.sub(r'```[a-z]*\n', '', full_response)
-        full_response = re.sub(r'\n```', '', full_response)
-        return full_response
-    except Exception as e:
-        print(f"Error generating command-line solution: {e}")
-        return "Cannot generate command-line solution."
-
-def generate_command_line_solution_for_file(prompt, filename):
-    full_prompt = f"{prompt} (Target file: {filename})"
-    try:
-        system_prompt = (
-            "You are a command-line assistant. Generate responses using 'Command:' and 'Explanation:' prefixes."
-            " For each command needed to accomplish the task on the specified file, start the line with 'Command:'."
-            " For any explanations or descriptions, start the line with 'Explanation:'."
-            " Do not include any other text or formats."
-            " Do not use any code formatting such as backticks or code blocks."
-            " Ensure that the commands are compatible with both GNU sed and BSD sed."
-        )
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": full_prompt}
-            ],
-            temperature=0
-        )
-        full_response = response.choices[0].message.content.strip()
-        # Remove any markdown code blocks if present
-        full_response = re.sub(r'```[a-z]*\n', '', full_response)
-        full_response = re.sub(r'\n```', '', full_response)
-        return full_response
-    except Exception as e:
-        print(f"Error generating command-line solution for {filename}: {e}")
-        return "Cannot generate command-line solution."
-
 def get_target_files(file_patterns):
     if file_patterns:
         # If specific file patterns are provided, use them with recursive glob
@@ -405,13 +350,10 @@ def main():
     plan = get_instructions_and_files(prompt, args.scope)
     print("Plan received from LLM:")
     print(plan)
-    print("\n")
     # Parse the plan to extract files to modify and context files
     files_to_modify, context_files, instructions, execution_table = parse_plan(plan, scope=args.scope)
-    print("\n")
     # Print the parsed output for verification
-    print("Files to Modify:\n")
-    print("Plan parsed: \n")
+    print("\nFiles to Modify:")
     if files_to_modify:
         for file in files_to_modify:
             print(f"{file}")
@@ -433,12 +375,12 @@ def main():
 
     print("\nExecution Table:")
     if execution_table:
-        print(f"{execution_table}\n")
+        print(f"{execution_table}")
     else:
-        print("None (no execution commands provided)\n")
+        print("None (no execution commands provided)")
 
     if not files_to_modify:
-        print("No target files match the specified scope or the files do not exist.\n")
+        print("\nNo target files match the specified scope or the files do not exist.")
 
     # Only create backup if it doesn't already exist
     backup_files(files_to_modify)
