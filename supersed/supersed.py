@@ -202,20 +202,14 @@ def process_llm_instruction(command, context_contents):
     files_to_modify_match = re.search(r"<files_to_modify>\{(.+?)\}", command)
     context_files_match = re.search(r"<context_files>\{(.+?)\}", command)
 
-    # print(f"WATCH: {files_to_modify_match.group(1).strip()}")
-    # print(f"WATCH: {context_files_match.group(1).strip()}")
-
     # Get the instruction text
     instruction = instruction_match.group(1) if instruction_match else ""
-    print(f"WATCH: {files_to_modify_match}")
+
     # Process files to modify, handling both direct lists and `find` commands
     if files_to_modify_match:
-        print(f"WATCH 2: {files_to_modify_match}")
         files_to_modify_content = strip_outer_quotes(files_to_modify_match.group(1).strip())
-        print(f"WATCH 3: {files_to_modify_content}")
         if files_to_modify_content.startswith("find "):
             # Execute find command to get list of files
-            print(f"WATCH: {files_to_modify_content}")
             files_to_modify = execute_find_command(files_to_modify_content)
         else:
             # Parse files as a comma-separated list
@@ -439,12 +433,12 @@ def main():
 
     print("\nExecution Table:")
     if execution_table:
-        print(f"{execution_table}")
+        print(f"{execution_table}\n")
     else:
-        print("None (no execution commands provided)")
+        print("None (no execution commands provided)\n")
 
     if not files_to_modify:
-        print("No target files match the specified scope or the files do not exist.")
+        print("No target files match the specified scope or the files do not exist.\n")
 
     # Only create backup if it doesn't already exist
     backup_files(files_to_modify)
