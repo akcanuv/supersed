@@ -190,23 +190,32 @@ def execute_find_command(command_line, scope="."):
         print(e.stderr)  # Output the error message for debugging
         return []
 
+def strip_outer_quotes(text):
+    # Check if the string starts and ends with the same quote character (either " or ')
+    if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
+        return text[1:-1]  # Remove only the outermost quotes
+    return text  # Return as-is if no matching outer quote
+
 def process_llm_instruction(command, context_contents):
     # Extract the main instruction, files to modify, and context files
     instruction_match = re.search(r"<instruction>\{(.+?)\}", command)
     files_to_modify_match = re.search(r"<files_to_modify>\{(.+?)\}", command)
     context_files_match = re.search(r"<context_files>\{(.+?)\}", command)
 
-    print("WATCH: ", files_to_modify_match)
-    print("WATCH: ", context_files_match)
+    # print(f"WATCH: {files_to_modify_match.group(1).strip()}")
+    # print(f"WATCH: {context_files_match.group(1).strip()}")
 
     # Get the instruction text
     instruction = instruction_match.group(1) if instruction_match else ""
-    
+    print(f"WATCH: {files_to_modify_match}")
     # Process files to modify, handling both direct lists and `find` commands
     if files_to_modify_match:
-        files_to_modify_content = files_to_modify_match.group(1).strip()
+        print(f"WATCH 2: {files_to_modify_match}")
+        files_to_modify_content = strip_outer_quotes(files_to_modify_match.group(1).strip())
+        print(f"WATCH 3: {files_to_modify_content}")
         if files_to_modify_content.startswith("find "):
             # Execute find command to get list of files
+            print(f"WATCH: {files_to_modify_content}")
             files_to_modify = execute_find_command(files_to_modify_content)
         else:
             # Parse files as a comma-separated list
@@ -216,7 +225,7 @@ def process_llm_instruction(command, context_contents):
 
     # Process context files, handling both direct lists and `find` commands
     if context_files_match:
-        context_files_content = context_files_match.group(1).strip()
+        context_files_content = strip_outer_quotes(context_files_match.group(1).strip())
         if context_files_content.startswith("find "):
             # Execute find command to get list of files
             context_files = execute_find_command(context_files_content)
