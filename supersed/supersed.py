@@ -69,20 +69,18 @@ def get_instructions_and_files(prompt, scope):
         
         # System message for instructing the assistant
         system_prompt = (
-            "You are supersed, a tool that analyzes user instructions and determines the steps needed to accomplish the task."
+            "You are supersed, a tool that analyzes user instructions and determines the steps needed to accomplish the task.\n"
             "Under a section called 'Plan', provide a numbered list of steps to accomplish the task.\n"
             "Under a section called 'Files to Modify', provide an appropriate command using the scope that will display the relevant files needed to be modified when parsed, use `find`.\n" 
             "Under a section called 'Context Files', provide an appropriate command using the scope that will display the relevant files needed to be read for context when parsed, use `find`. Files that are to be updated must also be included in the context.\n" 
-            "Under a section called 'Execution Table' provide a single step or a sequence of steps to be executed sequentially either with a `COMMAND: ` or an `LLM: ` prefix. \
-            The 'COMMAND: ' prefix should be followed by the command to run using a CLI tool. \
-            The COMMAND statements may include creation, deletion, copying, moving, executing and in-place modification of files within the given scope. \
-            Example 1: 'COMMAND: sed -i '' '/^$/d; s/^[QA]: //' test/example_1.txt' \
-            The 'LLM ' prefix should be followed by a generated prompt which is <instruction> to modify the required files. \
-            The instructions, files_to_modify, context_files must be clearly seperated using <tags> followed by '{}'. The tags will be used to parse the message to be sent to the model. \
-            They should be in a readable format such as: 'LLM 'Carry out the <instruction>{instruction} to modify the contents of <files_to_modify>{files_to_modify} using information in <context_files>{context_files}.''\n \
-            Example 2: 'LLM: <instruction>{'Extract the details of the project from README.md and the dependencies from requirements.txt and \populate the fields in pyproject.toml'} of <files_to_modify>{'./pyproject.toml'} using information in <context_files>{'./pyproject.toml', './README.md', './requirements.txt'}.' \
-            Example 3: 'LLM: For each file in <context_files>{'001.txt', '002.txt', '003.txt',...}, run <instruction>{'Correct the grammatical errors in the provided text and provide just the updated test. Do not include any additional explanation.'} and replace the contexts in <files_to_modify>{'001.txt', '002.txt', '003.txt',...}."
-            "Provide clear sections for 'Plan', 'Files to Modify', 'Context Files' and 'Execution Table'." 
+            "Under a section called 'Execution Table' provide a single step or a sequence of steps to be executed sequentially either with a `COMMAND: ` or an `LLM: ` prefix.\n"
+            "The 'COMMAND: ' prefix should be followed by the command to run using a CLI tool. The COMMAND statements may include creation, deletion, copying, moving, executing and in-place modification of files within the given scope.\n"
+            "Example 1: 'COMMAND: sed -i '' '/^$/d; s/^[QA]: //' test/example_1.txt'\n"
+            "The 'LLM: ' prefix should be followed by a generated prompt which is <instruction> to modify the required files. The instructions, files_to_modify, context_files must be clearly seperated using <tags> followed by '{}'. The tags will be used to parse the message to be sent to the model. They should be in a readable format such as: 'LLM 'Carry out the <instruction>{instruction} to modify the contents of <files_to_modify>{files_to_modify} using information in <context_files>{context_files}.''\n" 
+            "Example 2: 'LLM: <instruction>{'Extract the details of the project from README.md and the dependencies from requirements.txt and \populate the fields in pyproject.toml'} of <files_to_modify>{'./pyproject.toml'} using information in <context_files>{'./pyproject.toml', './README.md', './requirements.txt'}.'\n" 
+            "Example 3: 'LLM: For each file in <context_files>{'001.txt', '002.txt', '003.txt',...}, run <instruction>{'Correct the grammatical errors in the provided text and provide just the updated test. Do not include any additional explanation.'} and replace the contexts in <files_to_modify>{'001.txt', '002.txt', '003.txt',...}.\n"
+            "When processing more than one file with LLM, modify the <instruction> assuming it is only acting on one file at a time, so it should not reference any files in <instruction>.\n"
+            "Provide clear sections for 'Plan', 'Files to Modify', 'Context Files' and 'Execution Table'.\n" 
             "Do not include any additional explanation."
         )
 
@@ -110,41 +108,70 @@ def get_instructions_and_files(prompt, scope):
         print(f"Error getting instructions from LLM: {e}")
         sys.exit(1)
 
+def extract_filenames_from_text(line):
+    # Extracts filenames from a line of text by searching for patterns like file paths
+    return re.findall(r'[./\w-]+(?:\.\w+)?', line)
+
 def parse_plan(plan):
-    # Initialize lists
+    # Initialize lists for sections
     files_to_modify = []
     context_files = []
+    instructions = ""
+    execution_table = ""
+    current_section = None
+
     # Split the plan into lines
     lines = plan.split('\n')
-    current_section = None
 
     for line in lines:
         line = line.strip()
-        if line.lower() == 'files to modify:' or line.lower().startswith('files to modify'):
+
+        # Detect sections
+        if line.lower() == 'plan:':
+            current_section = 'plan'
+            continue
+        elif line.lower() == 'files to modify:' or line.lower().startswith('files to modify'):
             current_section = 'modify'
             continue
         elif line.lower() == 'context files:' or line.lower().startswith('context files'):
             current_section = 'context'
             continue
+        elif line.lower() == 'execution table:' or line.lower().startswith('execution table'):
+            current_section = 'execute'
+            continue
 
-        if current_section == 'modify':
-            # Extract filenames from the line
+        # Add content based on section
+        if current_section == 'plan':
+            instructions += line + "\n"
+        elif current_section == 'modify':
             extracted = extract_filenames_from_text(line)
             files_to_modify.extend(extracted)
         elif current_section == 'context':
             extracted = extract_filenames_from_text(line)
             context_files.extend(extracted)
+        elif current_section == 'execute':
+            execution_table += line + "\n"
 
-    return list(set(files_to_modify)), list(set(context_files)), plan
+    # Return parsed elements
+    return list(set(files_to_modify)), list(set(context_files)), instructions.strip(), execution_table.strip()
 
-def process_with_llm(prompt, content, context_contents, filename):
+def process_with_llm(prompt, content, context_contents):
     try:
-        # Append context files content to the prompt
-        context_text = ""
-        for context_filename, file_content in context_contents.items():
-            context_text += f"\n\n### Content of {context_filename}:\n{file_content}\n"
-        full_prompt = f"Instruction: {prompt}\n\nContent of {filename} to Modify:\n{content}\n{context_text}"
+        # Assemble the main prompt with the instruction
+        full_prompt = (
+            f"Follow the instruction below, read the context files, and apply the user's instruction to the provided content. "
+            f"Return only the modified content without additional explanations.\n\n"
+            f"{prompt}\n\n"
+        )
 
+        # Append each context file's content with a heading
+        for context_filename, file_content in context_contents.items():
+            full_prompt += f"### Content of {context_filename}\n{file_content}\n"
+
+        # Add the content to modify at the end with a clear heading
+        full_prompt += f"\n### Content to Modify\n{content}\n"
+
+        # Call the LLM API
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -156,6 +183,8 @@ def process_with_llm(prompt, content, context_contents, filename):
             ],
             temperature=0
         )
+
+        # Return the modified content
         return response.choices[0].message.content
     except Exception as e:
         print(f"Error processing with LLM: {e}")
@@ -278,9 +307,8 @@ def main():
     print("Plan received from LLM:")
     print(plan)
     
-    exit
     # Parse plan to get files to modify and context files
-    files_to_modify, context_files, plan = parse_plan(plan)
+    files_to_modify, context_files, instructions, execution_table = parse_plan(plan)
 
     # Combine files from command line arguments and plan
     if args.scope:
@@ -296,42 +324,46 @@ def main():
     # Only create backup if it doesn't exist
     backup_files(files_to_modify)
 
-    # Read contents of context files
-    context_contents = read_file_contents(context_files)
-
     # Try to generate a global command-line solution first
     cmd = generate_command_line_solution(prompt)
     cmd = adjust_command(cmd)  # Adjust the command based on OS
 
-    # Execute commands if a solution was generated
-    if "Cannot generate command-line solution." not in cmd and cmd:
-        print("Executing command(s):")
-        commands = cmd.splitlines()
-        for command in commands:
-            command = command.strip()
-            # Process only lines that start with "Command:"
-            if command.startswith("Command:"):
-                actual_command = command.replace("Command:", "").strip()
-                print(f"Executing: {actual_command}")
-                # Execute command in the correct directory
-                os.system(actual_command.replace("cd test && ", ""))
-    else:
-        # Attempt to generate command-line solutions per file
-        for file in files_to_modify:
-            cmd = generate_command_line_solution_for_file(prompt, file)
-            cmd = adjust_command(cmd)  # Adjust the command based on OS
-            if "Cannot generate command-line solution." not in cmd and cmd:
-                print(f"Executing command on {file}: {cmd}")
-                # Replace placeholders and use file paths directly
-                cmd = cmd.replace("[filename]", file).replace("<filename>", file)
-                os.system(cmd)
-            else:
-                # Process file with LLM, including context contents
+    print("Executing command(s):")
+    commands = cmd.splitlines()
+
+    # Determine base directory from scope, default to current directory if not specified
+    base_directory = args.scope[0] if args.scope else "."
+    base_directory = os.path.dirname(base_directory) if os.path.isfile(base_directory) else base_directory
+
+    for command in commands:
+        command = command.strip()
+
+        # Process lines that start with "Command:"
+        if command.startswith("Command:"):
+            actual_command = command.replace("Command:", "").strip()
+            print(f"Executing: {actual_command} in directory: {base_directory}")
+            # Execute command in the determined base directory
+            os.system(f"cd {base_directory} && {actual_command}")
+
+        # Process lines that start with "LLM:"
+        elif command.startswith("LLM:"):
+            llm_instruction = command.replace("LLM:", "").strip()
+            print(f"Processing with LLM: {llm_instruction}")
+
+            # Extract files to modify and context files from the instruction
+            files_to_modify = files_to_modify if files_to_modify else []
+            context_contents = read_file_contents(context_files)
+
+            # Execute LLM calls for each file to modify
+            for file in files_to_modify:
                 if os.path.isfile(file):
                     with open(file, 'r', encoding='utf-8') as f:
                         content = f.read()
 
-                    edited_content = process_with_llm(prompt, content, context_contents, file)
+                    # Call the LLM with the instruction, content, and context
+                    edited_content = process_with_llm(llm_instruction, content, context_contents)
+                    
+                    # Write the modified content back to the file
                     with open(file, 'w', encoding='utf-8') as f:
                         f.write(edited_content)
                     print(f"Processed file with LLM: {file}")
