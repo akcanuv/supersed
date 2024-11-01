@@ -91,7 +91,7 @@ def get_instructions_and_files(prompt):
 
         # Call to OpenAI API
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -194,7 +194,7 @@ def generate_command_line_solution_for_file(prompt, filename):
             " Ensure that the commands are compatible with both GNU sed and BSD sed."
         )
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": full_prompt}
