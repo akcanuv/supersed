@@ -366,7 +366,7 @@ def is_within_scope(file, pattern):
         return fnmatch(file, pattern)
 
 def main():
-    parser = argparse.ArgumentParser(description='A natural language text editor powered by LLM.')
+    parser = argparse.ArgumentParser(description='An LLM-powered super-CLI.')
     parser.add_argument('command', nargs='+', help='The command to execute.')
     parser.add_argument(
         '-s', '--scope', nargs='*', default=['.'],
