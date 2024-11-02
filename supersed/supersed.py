@@ -8,6 +8,7 @@ import subprocess
 import glob
 import re
 import platform  
+from fnmatch import fnmatch
 
 # Import OpenAI client
 from openai import OpenAI
@@ -71,9 +72,9 @@ def get_instructions_and_files(prompt, scope):
         system_prompt = (
             "You are supersed, a tool that analyzes user instructions and determines the steps needed to accomplish the task.\n"
             "Under a section called 'Plan', provide a numbered list of steps to accomplish the task.\n"
-            "Under a section called 'Files to Modify', provide an appropriate command using the scope that will display the relevant files needed to be modified when parsed, use `find`.\n" 
+            "Under a section called 'Files to Modify/Create', provide an appropriate command using the scope that will display the relevant files needed to be modified or created when parsed, use `find`.\n" 
             "Under a section called 'Context Files', provide an appropriate command using the scope that will display the relevant files needed to be read for context when parsed, use `find`. Files that are to be updated must also be included in the context.\n" 
-            "Under a section called 'Execution Table' provide a single step or a sequence of steps to be executed sequentially either with a `COMMAND: ` or an `LLM: ` prefix.\n"
+            "Under a section called 'Execution Table' provide a single step or a sequence of steps to be executed sequentially either with a `COMMAND: ` or an `LLM: ` prefix.  You may sequentially chain COMMAND: and LLM: as appropriate for the task.\n"
             "The 'COMMAND: ' prefix should be followed by the command to run using a CLI tool. The COMMAND statements may include creation, deletion, copying, moving, executing and in-place modification of files within the given scope.\n"
             "Example 1: 'COMMAND: sed -i '' '/^$/d; s/^[QA]: //' test/example_1.txt'\n"
             "The 'LLM: ' prefix should be followed by a generated prompt which is <instruction> to modify the required files. The instructions, files_to_modify, context_files must be clearly seperated using <tags> followed by '{}'. The tags will be used to parse the message to be sent to the model. They should be in a readable format such as: 'LLM 'Carry out the <instruction>{instruction} to modify the contents of <files_to_modify>{files_to_modify} using information in <context_files>{context_files}.''\n" 
@@ -81,8 +82,9 @@ def get_instructions_and_files(prompt, scope):
             "Example 3: 'LLM: For each file in <context_files>{'001.txt', '002.txt', '003.txt',...}, run <instruction>{'Correct the grammatical errors in the provided text and provide just the updated test. Do not include any additional explanation.'} and replace the contexts in <files_to_modify>{'001.txt', '002.txt', '003.txt',...}.\n"
             "When processing more than one file with LLM, modify the <instruction> assuming it is only acting on one file at a time, so it should not reference any files in <instruction>.\n"
             "<context_files> and <files_to_modify> may be a `find` command for user instructions such as a file pattern or when 'all files' is mentioned"
-            "Provide clear sections for 'Plan', 'Files to Modify', 'Context Files' and 'Execution Table'. Do not enclose the sections with markdown code blocks.\n" 
-            "Do not include any additional explanation."
+            "Provide clear sections for 'Plan', 'Files to Modify/Create', 'Context Files' and 'Execution Table'.\n"
+            "DO NOT enclose any section with backticks like ```bash $cmd```.\n" 
+            "DO NOT include any additional explanation."
         )
 
         # User message with prompt and scope of execution
@@ -113,17 +115,13 @@ def extract_filenames_from_text(line):
     # Extracts filenames from a line of text by searching for patterns like file paths
     return re.findall(r'[./\w-]+(?:\.\w+)?', line)
 
-def parse_plan(plan, scope=None):
+def parse_plan(plan):
     # Initialize lists for sections
     files_to_modify = []
     context_files = []
     instructions = ""
     execution_table = ""
     current_section = None
-
-    # Ensure scope is a single path, not a list
-    if isinstance(scope, list):
-        scope = scope[0] if scope else "."
 
     # Split the plan into lines
     lines = plan.split('\n')
@@ -150,28 +148,28 @@ def parse_plan(plan, scope=None):
             # Handle cases where Files to Modify is explicitly marked as empty
             if line.lower() == '- none':
                 continue
-            extracted_files = execute_find_command(line, scope) if line else []
+            extracted_files = execute_find_command(line) if line else []
             files_to_modify.extend(extracted_files)
         elif current_section == 'context':
             # Handle cases where Context Files is explicitly marked as empty
             if line.lower() == '- none':
                 continue
-            extracted_files = execute_find_command(line, scope) if line else []
+            extracted_files = execute_find_command(line) if line else []
             context_files.extend(extracted_files)
         elif current_section == 'execute':
             execution_table += line + "\n"
     # Return parsed elements, ensure deduplication and clean formatting
     return list(set(files_to_modify)), list(set(context_files)), instructions.strip(), execution_table.strip()
 
-def execute_find_command(command_line, scope="."):
+def execute_find_command(command_line):
     try:
         # Only proceed if command_line is valid and contains 'find'
         if not command_line or "find" not in command_line:
             print(f"Skipping invalid command: {command_line}")
             return []
         
-        # Check if command_line starts with "COMMAND:" and modify it to start from the scope directory
-        if command_line.startswith("COMMAND:"):
+        # Check if command_line starts with "COMMAND:", strip tag
+        if command_line.startswith("'COMMAND:") or command_line.startswith("\COMMAND:"):
             command_line = command_line.replace("COMMAND: find", f"find", 1).strip()
         
         # Execute the command and capture the output
@@ -301,23 +299,19 @@ def adjust_command(cmd):
         cmd = re.sub(pattern, replacement, cmd)
     return cmd
 
-def execute_commands(full_response):
-    """
-    Parses the LLM response and executes only the commands prefixed with 'COMMAND:'.
-    Ignores any lines starting with 'Explanation:' or other text.
-    Also strips any backticks or extraneous characters from the commands.
-    """
-    commands = []
-    lines = full_response.split('\n')
-    for line in lines:
-        line = line.strip()
-        if line.startswith("COMMAND:"):
-            cmd = line[len("COMMAND:"):].strip()
-            # Remove surrounding backticks if present
-            cmd = cmd.strip('`').strip()
-            if cmd:
-                commands.append(cmd)
-    return commands
+# Function to validate files against the specified scope
+def validate_scope(files, scope_patterns):
+    for file in files:
+        if not any(is_within_scope(file, pattern) for pattern in scope_patterns):
+            return False
+    return True
+
+def is_within_scope(file, pattern):
+    # Check if the file is within the directory or matches the file pattern
+    if os.path.isdir(pattern):
+        return os.path.commonpath([os.path.abspath(file), os.path.abspath(pattern)]) == os.path.abspath(pattern)
+    else:
+        return fnmatch(file, pattern)
 
 def main():
     parser = argparse.ArgumentParser(description='A natural language text editor powered by LLM.')
@@ -345,12 +339,13 @@ def main():
 
     # Get plan, file change manifest, and instructions from LLM
     plan = get_instructions_and_files(prompt, args.scope)
-    print("Plan received from LLM:")
-    print(plan)
+    
     # Parse the plan to extract files to modify and context files
-    files_to_modify, context_files, instructions, execution_table = parse_plan(plan, scope=args.scope)
+    files_to_modify, context_files, instructions, execution_table = parse_plan(plan)
     # Print the parsed output for verification
-    print("\nFiles to Modify:")
+    print("<supersed>")
+    print("\nPlan received from Planner:")
+    print("\nFiles to Modify/Create:")
     if files_to_modify:
         for file in files_to_modify:
             print(f"{file}")
@@ -376,16 +371,15 @@ def main():
     else:
         print("None (no execution commands provided)")
 
-    if not files_to_modify:
-        print("\nNo target files match the specified scope or the files do not exist.")
+    # Check if files are within the scope
+    if not validate_scope(files_to_modify, args.scope) or not validate_scope(context_files, args.scope):
+        print("Error: Some files are outside the specified scope.")
+        sys.exit(1)
 
     # Only create backup if it doesn't already exist
     backup_files(files_to_modify)
 
-    # Read contents of context files for use with LLM processing
-    context_contents = read_file_contents(context_files)
-
-    print("Executing command(s) from LLM instructions:")
+    print("Executing command(s) from Planner instructions:")
 
     # Process commands based on the execution table
     commands = execution_table.splitlines()
@@ -407,6 +401,9 @@ def main():
         elif command.startswith("LLM:"):
             llm_instruction = command.replace("LLM:", "").strip()
             print(f"Processing with LLM: {llm_instruction}")
+
+            # Read contents of context files for use with LLM processing
+            context_contents = read_file_contents(context_files)
 
             # Use the new helper function to parse and execute the LLM instruction
             process_llm_instruction(llm_instruction, context_contents)
