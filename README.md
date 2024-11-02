@@ -22,7 +22,6 @@ If you simply want to use `supersed`, install it from PyPI using.
 If you would like to contribute to `supersed`, consider cloning the github directory.
 
    ```
-   bash
    git clone https://github.com/akcanuv/supersed.git
    cd supersed
    pip install -e .
