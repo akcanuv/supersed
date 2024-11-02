@@ -20,37 +20,88 @@ if not client.api_key:
     print("Error: OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
     sys.exit(1)
 
+# Save the list of modified files to .modified_files.ss
+def update_modified_files(files):
+    modified_file_path = os.path.join('.backup', '.modified_files.ss')
+    with open(modified_file_path, 'w') as f:
+        for file in files:
+            f.write(file + '\n')
+
+# Backup files with option to force re-backup
 def backup_files(files, force=False):
     backup_dir = os.path.join(os.getcwd(), '.backup')
-    if not os.path.exists(backup_dir) or force:
-        for file in files:
-            backup_path = os.path.join(backup_dir, file)
-            os.makedirs(os.path.dirname(backup_path), exist_ok=True)
-            shutil.copy(file, backup_path)
-        print("Backup created.")
-    else:
-        print("\nBackup already exists. Use 'supersed save' to update the backup.")
-
-def save_backup(files):
-    backup_dir = os.path.join(os.getcwd(), '.backup')
+    os.makedirs(backup_dir, exist_ok=True)
+    
     for file in files:
         backup_path = os.path.join(backup_dir, file)
         os.makedirs(os.path.dirname(backup_path), exist_ok=True)
         shutil.copy(file, backup_path)
-    print("\nBackup updated with current file versions.")
+    
+    print("Backup created.")
+    update_modified_files(files)
 
-def restore_files():
+# Automatic backup on initial run
+def automatic_backup(files):
     backup_dir = os.path.join(os.getcwd(), '.backup')
+    os.makedirs(backup_dir, exist_ok=True)
+    for file in files:
+        backup_path = os.path.join(backup_dir, file)
+        os.makedirs(os.path.dirname(backup_path), exist_ok=True)
+        shutil.copy(file, backup_path)
+    print("Automatic backup created.")
+
+# Update the list of modified files in .modified_files.ss
+def update_modified_files(files):
+    modified_file_path = os.path.join('.backup', '.modified_files.ss')
+    with open(modified_file_path, 'w') as f:
+        for file in files:
+            f.write(file + '\n')
+
+# Save only recent changes or all files in scope if specified
+def save_backup(files, scope=None):
+    backup_dir = os.path.join(os.getcwd(), '.backup')
+    os.makedirs(backup_dir, exist_ok=True)
+    for file in files:
+        backup_path = os.path.join(backup_dir, file)
+        os.makedirs(os.path.dirname(backup_path), exist_ok=True)
+        shutil.copy(file, backup_path)
+    
+    if scope is None:
+        print("Backup updated with current file versions (recent changes only).")
+    else:
+        print("Backup updated with current file versions (all files in scope).")
+    
+    update_modified_files(files)
+
+# Restore recent changes or all files in scope if specified
+def restore_files(scope=None):
+    backup_dir = os.path.join(os.getcwd(), '.backup')
+    modified_file_path = os.path.join(backup_dir, '.modified_files.ss')
+    
     if not os.path.exists(backup_dir):
         print("\nNo backup found to restore.")
         return
-    for root, _, files in os.walk(backup_dir):
-        for file in files:
-            backup_file = os.path.join(root, file)
-            relative_path = os.path.relpath(backup_file, backup_dir)
-            os.makedirs(os.path.dirname(relative_path), exist_ok=True)
-            shutil.copy(backup_file, relative_path)
+    
+    files_to_restore = []
+    if scope:
+        # Restore all files within the specified scope
+        files_to_restore = [os.path.relpath(os.path.join(root, file), backup_dir) 
+                            for root, _, files in os.walk(backup_dir) 
+                            for file in files]
+    else:
+        # Only restore files listed in .modified_files.ss
+        if os.path.exists(modified_file_path):
+            with open(modified_file_path, 'r') as f:
+                files_to_restore = [line.strip() for line in f.readlines()]
+    
+    # Restore files
+    for file in files_to_restore:
+        backup_file = os.path.join(backup_dir, file)
+        os.makedirs(os.path.dirname(file), exist_ok=True)
+        shutil.copy(backup_file, file)
+    
     print("\nFiles restored from backup.")
+    update_modified_files(files_to_restore)
 
 def extract_filenames_from_text(text):
     # Improved regex to find filenames with paths (e.g., test_files/file1.txt)
@@ -74,7 +125,7 @@ def get_instructions_and_files(prompt, scope):
             "Under a section called 'Plan', provide a numbered list of steps to accomplish the task.\n"
             "Under a section called 'Files to Modify/Create', provide an appropriate command using the scope that will display the relevant files needed to be modified or created when parsed, use `find`.\n" 
             "Under a section called 'Context Files', provide an appropriate command using the scope that will display the relevant files needed to be read for context when parsed, use `find`. Files that are to be updated must also be included in the context.\n" 
-            "Under a section called 'Execution Table' provide a single step or a sequence of steps to be executed sequentially either with a `COMMAND: ` or an `LLM: ` prefix.  You may sequentially chain COMMAND: and LLM: as appropriate for the task.\n"
+            "Under a section called 'Execution Table' provide a single step or a sequence of steps to be executed sequentially either with a `COMMAND: ` or an `LLM: ` prefix.  You may chain any number or order of COMMAND: and LLM: as appropriate as per Plan. To complete the task.\n"
             "The 'COMMAND: ' prefix should be followed by the command to run using a CLI tool. The COMMAND statements may include creation, deletion, copying, moving, executing and in-place modification of files within the given scope.\n"
             "Example 1: 'COMMAND: sed -i '' '/^$/d; s/^[QA]: //' test/example_1.txt'\n"
             "The 'LLM: ' prefix should be followed by a generated prompt which is <instruction> to modify the required files. The instructions, files_to_modify, context_files must be clearly seperated using <tags> followed by '{}'. The tags will be used to parse the message to be sent to the model. They should be in a readable format such as: 'LLM 'Carry out the <instruction>{instruction} to modify the contents of <files_to_modify>{files_to_modify} using information in <context_files>{context_files}.''\n" 
@@ -84,6 +135,7 @@ def get_instructions_and_files(prompt, scope):
             "<context_files> and <files_to_modify> may be a `find` command for user instructions such as a file pattern or when 'all files' is mentioned"
             "Provide clear sections for 'Plan', 'Files to Modify/Create', 'Context Files' and 'Execution Table'.\n"
             "DO NOT enclose any section with backticks like ```bash $cmd```.\n" 
+            "DO NOT include files in .backup in 'Files to Modify/Create' or 'Context Files'\n"
             "DO NOT include any additional explanation."
         )
 
@@ -318,7 +370,7 @@ def main():
     parser.add_argument('command', nargs='+', help='The command to execute.')
     parser.add_argument(
         '-s', '--scope', nargs='*', default=['.'],
-        help='Limit the scope of file modifications. Use "**/*.txt" for recursive patterns.'
+        help='Limit the scope of file context and modifications. Use "**/*.txt" for recursive patterns.'
     )
     args = parser.parse_args()
 
@@ -336,6 +388,9 @@ def main():
 
     # Combine command line arguments into a prompt
     prompt = ' '.join(args.command)
+
+    # Remove trailing slashes from each scope in args.scope
+    args.scope = [scope.rstrip('/') for scope in args.scope]
 
     # Get plan, file change manifest, and instructions from LLM
     plan = get_instructions_and_files(prompt, args.scope)
