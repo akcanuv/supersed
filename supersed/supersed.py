@@ -133,7 +133,7 @@ def get_instructions_and_files(prompt, scope):
             "Example 2: 'LLM: <instruction>{'Extract the details of the project from README.md and the dependencies from requirements.txt and populate the fields in pyproject.toml'} of <files_to_modify>{'./pyproject.toml'} using information in <context_files>{'./pyproject.toml', './README.md', './requirements.txt'}.'\n" 
             "Example 3: 'LLM: For each file in <context_files>{'001.txt', '002.txt', '003.txt',...}, run <instruction>{'Correct the grammatical errors in the provided text and provide just the updated test. Do not include any additional explanation.'} and replace the contexts in <files_to_modify>{'001.txt', '002.txt', '003.txt',...}.\n"
             "When processing more than one file with LLM, modify the <instruction> assuming it is only acting on one file at a time, so it should not reference any files in <instruction>.\n"
-            "<context_files> and <files_to_modify> may be a `find` command for user instructions such as a file pattern or when 'all files' is mentioned"
+            "<context_files> and <files_to_modify> may be a `find` command for user instructions such as a file pattern or when 'all files' is mentioned, do not include quotes inside {'find ... '} when using the command, rather directly put the command in {} like {find ...}" 
             "Provide clear sections for 'Plan', 'Files to Modify/Create', 'Context Files' and 'Execution Table'.\n"
             "DO NOT enclose any section with backticks like ```bash $cmd```.\n" 
             "DO NOT include files in .backup in 'Files to Modify/Create' or 'Context Files'\n when executing find use ! -path '*.backup*'"
@@ -479,7 +479,7 @@ def main():
 
     # Get plan, file change manifest, and instructions from LLM
     plan = get_instructions_and_files(prompt, args.scope)
-    # print(plan)
+    print(plan)
     # Parse the plan to extract files to modify and context files
     files_to_modify, context_files, instructions, execution_table = parse_plan(plan)
     # Print the parsed output for verification
