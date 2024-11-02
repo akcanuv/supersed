@@ -9,6 +9,7 @@ import glob
 import re
 import platform  
 from fnmatch import fnmatch
+from typing import List
 
 # Import OpenAI client
 from openai import OpenAI
@@ -123,19 +124,20 @@ def get_instructions_and_files(prompt, scope):
         system_prompt = (
             "You are supersed, a tool that analyzes user instructions and determines the steps needed to accomplish the task.\n"
             "Under a section called 'Plan', provide a numbered list of steps to accomplish the task.\n"
-            "Under a section called 'Files to Modify/Create', provide an appropriate command using the scope that will display the relevant files needed to be modified or created when parsed, use `find`.\n" 
+            "Under a section called 'Files to Modify/Create', provide an appropriate command using the scope that will display the relevant files needed to be modified or created when parsed, use `find`. When specifically asked to create a file, use `touch`. When specifically asked to update a file, use `find`.\n" 
             "Under a section called 'Context Files', provide an appropriate command using the scope that will display the relevant files needed to be read for context when parsed, use `find`. Files that are to be updated must also be included in the context.\n" 
             "Under a section called 'Execution Table' provide a single step or a sequence of steps to be executed sequentially either with a `COMMAND: ` or an `LLM: ` prefix.  You may chain any number or order of COMMAND: and LLM: as appropriate as per Plan. To complete the task.\n"
             "The 'COMMAND: ' prefix should be followed by the command to run using a CLI tool. The COMMAND statements may include creation, deletion, copying, moving, executing and in-place modification of files within the given scope.\n"
             "Example 1: 'COMMAND: sed -i '' '/^$/d; s/^[QA]: //' test/example_1.txt'\n"
             "The 'LLM: ' prefix should be followed by a generated prompt which is <instruction> to modify the required files. The instructions, files_to_modify, context_files must be clearly seperated using <tags> followed by '{}'. The tags will be used to parse the message to be sent to the model. They should be in a readable format such as: 'LLM 'Carry out the <instruction>{instruction} to modify the contents of <files_to_modify>{files_to_modify} using information in <context_files>{context_files}.''\n" 
-            "Example 2: 'LLM: <instruction>{'Extract the details of the project from README.md and the dependencies from requirements.txt and \populate the fields in pyproject.toml'} of <files_to_modify>{'./pyproject.toml'} using information in <context_files>{'./pyproject.toml', './README.md', './requirements.txt'}.'\n" 
+            "Example 2: 'LLM: <instruction>{'Extract the details of the project from README.md and the dependencies from requirements.txt and populate the fields in pyproject.toml'} of <files_to_modify>{'./pyproject.toml'} using information in <context_files>{'./pyproject.toml', './README.md', './requirements.txt'}.'\n" 
             "Example 3: 'LLM: For each file in <context_files>{'001.txt', '002.txt', '003.txt',...}, run <instruction>{'Correct the grammatical errors in the provided text and provide just the updated test. Do not include any additional explanation.'} and replace the contexts in <files_to_modify>{'001.txt', '002.txt', '003.txt',...}.\n"
             "When processing more than one file with LLM, modify the <instruction> assuming it is only acting on one file at a time, so it should not reference any files in <instruction>.\n"
             "<context_files> and <files_to_modify> may be a `find` command for user instructions such as a file pattern or when 'all files' is mentioned"
             "Provide clear sections for 'Plan', 'Files to Modify/Create', 'Context Files' and 'Execution Table'.\n"
             "DO NOT enclose any section with backticks like ```bash $cmd```.\n" 
-            "DO NOT include files in .backup in 'Files to Modify/Create' or 'Context Files'\n"
+            "DO NOT include files in .backup in 'Files to Modify/Create' or 'Context Files'\n when executing find use ! -path '*.backup*'"
+            "DO NOT number the Execution Table.\n"
             "DO NOT include any additional explanation."
         )
 
@@ -213,28 +215,111 @@ def parse_plan(plan):
     # Return parsed elements, ensure deduplication and clean formatting
     return list(set(files_to_modify)), list(set(context_files)), instructions.strip(), execution_table.strip()
 
-def execute_find_command(command_line):
+def execute_find_command(command_line: str) -> List[str]:
+    """
+    Executes one or more 'find' and 'touch' commands extracted from the command_line string
+    and returns a list of matching or created file paths.
+
+    Args:
+        command_line (str): The input string containing the 'find' and/or 'touch' command(s).
+
+    Returns:
+        List[str]: A list of file paths returned by the 'find' command(s) and created by 'touch' command(s).
+    """
     try:
-        # Only proceed if command_line is valid and contains 'find'
-        if not command_line or "find" not in command_line:
+        # Only proceed if command_line is valid and contains 'find' or 'touch'
+        if not command_line or ("find" not in command_line and "touch" not in command_line):
             print(f"Skipping invalid command: {command_line}")
             return []
         
-        # Check if command_line starts with "COMMAND:", strip tag
-        if command_line.startswith("'COMMAND:") or command_line.startswith("\COMMAND:"):
-            command_line = command_line.replace("COMMAND: find", f"find", 1).strip()
+        # Initialize a list to collect all found and created files
+        all_files = []
+
+        # Split the command_line into individual commands based on separators ';', '|', '&', or newlines
+        # This allows handling multiple commands in a single command_line string
+        commands = re.split(r'[;&|]', command_line)
+
+        for cmd in commands:
+            cmd = cmd.strip()
+            if not cmd:
+                continue  # Skip empty commands
+
+            # Remove leading numbering or labels (e.g., '1. ', '2) ', etc.)
+            # This regex removes any leading digits, followed by a dot or parenthesis and optional space
+            cmd = re.sub(r'^\d+[\.\)]\s*', '', cmd)
+
+            if not cmd:
+                continue  # Skip if command is empty after stripping
+
+            # Check if the command is a 'find' command
+            if cmd.lower().startswith('find'):
+                try:
+                    # Execute the 'find' command and capture the output
+                    result = subprocess.run(
+                        cmd,
+                        shell=True,               # Execute through the shell
+                        text=True,                # Capture output as text
+                        capture_output=True,      # Capture stdout and stderr
+                        check=True                # Raise CalledProcessError on non-zero exit
+                    )
+                    
+                    # Split the output by lines to get individual file paths
+                    files = result.stdout.strip().split('\n')
+                    
+                    # Filter out any empty strings and extend to the all_files list
+                    valid_files = [file for file in files if file]
+                    all_files.extend(valid_files)
+                
+                except subprocess.CalledProcessError as e:
+                    print(f"Error executing 'find' command: {cmd}")
+                    print(f"Error message: {e.stderr.strip()}")
+                    continue  # Skip to the next command
+                
+            # Check if the command is a 'touch' command
+            elif cmd.lower().startswith('touch'):
+                try:
+                    # Extract the file paths from the 'touch' command
+                    # Use shlex.split to handle file paths with spaces and quotes
+                    import shlex
+                    touch_parts = shlex.split(cmd)
+                    
+                    # Remove 'touch' from the parts to get the file paths
+                    file_paths = touch_parts[1:]
+                    
+                    if not file_paths:
+                        print(f"No file paths specified in 'touch' command: {cmd}")
+                        continue  # Skip if no files are specified
+                    
+                    # Execute the 'touch' command to create the files
+                    subprocess.run(
+                        cmd,
+                        shell=True,
+                        check=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE
+                    )
+                    
+                    # Add the created file paths to the all_files list
+                    all_files.extend(file_paths)
+                
+                except subprocess.CalledProcessError as e:
+                    print(f"Error executing 'touch' command: {cmd}")
+                    print(f"Error message: {e.stderr.strip()}")
+                    continue  # Skip to the next command
+                except ValueError as ve:
+                    print(f"Error parsing 'touch' command: {cmd}")
+                    print(f"Error message: {str(ve)}")
+                    continue  # Skip to the next command
+            
+            else:
+                # If the command is neither 'find' nor 'touch', skip it
+                print(f"Unsupported command skipped: {cmd}")
+                continue
         
-        # Execute the command and capture the output
-        result = subprocess.run(command_line, shell=True, text=True, capture_output=True, check=True)
-        
-        # Split the output by lines to get individual file paths
-        files = result.stdout.strip().split('\n')
-        
-        # Filter out any empty strings in case there are blank lines in the output
-        return [file for file in files if file]
-    except subprocess.CalledProcessError as e:
-        print(f"Error executing command: {command_line}")
-        print(e.stderr)  # Output the error message for debugging
+        return all_files
+
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
         return []
 
 def strip_outer_quotes(text):
@@ -275,7 +360,7 @@ def process_llm_instruction(command, context_contents):
             context_files = [file.strip().strip("'\"") for file in context_files_content.split(",")]
     else:
         context_files = []
-
+    
     # Execute LLM calls for each file to modify
     for file in files_to_modify:
         if os.path.isfile(file):
@@ -394,7 +479,7 @@ def main():
 
     # Get plan, file change manifest, and instructions from LLM
     plan = get_instructions_and_files(prompt, args.scope)
-    
+    print(plan)
     # Parse the plan to extract files to modify and context files
     files_to_modify, context_files, instructions, execution_table = parse_plan(plan)
     # Print the parsed output for verification
