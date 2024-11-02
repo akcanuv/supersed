@@ -41,16 +41,16 @@ Obtain your OpenAI API key from OpenAI and set it as an environment variable:
 Run the script with your desired command:
 
 ```
-supersed "your instruction here" -f [file_patterns]
+supersed "your instruction here"
 ```
 
 ## Commands
 
 - Execute a Command:
-Provide an instruction and specify target files using -f:
+Provide an instruction and specify the scope of the commands with -s, default scope is `.`:
 
 ```
-supersed "your instruction" -f "file_pattern"
+supersed "your instruction" -s "scope"
 ```
 
 
@@ -58,7 +58,7 @@ supersed "your instruction" -f "file_pattern"
 Backup specified files:
 
 ```
-supersed save -f "file_pattern"
+supersed save
 ```
 
 
@@ -74,21 +74,21 @@ supersed restore
 1. Update the README.md by Reviewing supersed.py:
 
 ```
-supersed "update the readme file by reviewing the code in supersed.py" -f README.md
+supersed "update the README.md file by reviewing the code in supersed.py"
 ```
 
 
 2. Remove All Blank Spaces in Text Files Within test_files Directory:
 
 ```
-supersed "remove all the blank spaces in the text files in test_files directory" -f "test_files/**/*.txt"
+supersed "remove all the blank spaces in the text files in test_files directory"
 ```
 
 
 3. Save Current File Versions to Backup:
 
 ```
-supersed save -f "*.txt"
+supersed save
 ```
 
 
