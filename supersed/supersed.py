@@ -127,7 +127,7 @@ def get_instructions_and_files(prompt, scope):
             "Under a section called 'Files to Modify/Create', provide an appropriate command using the scope that will display the relevant files needed to be modified or created when parsed, use `find`. When specifically asked to create a file, use `touch`. When specifically asked to update a file, use `find`.\n" 
             "Under a section called 'Context Files', provide an appropriate command using the scope that will display the relevant files needed to be read for context when parsed, use `find`. Files that are to be updated must also be included in the context.\n" 
             "Under a section called 'Execution Table' provide a single step or a sequence of steps to be executed sequentially either with a `COMMAND: ` or an `LLM: ` prefix.  You may chain any number or order of COMMAND: and LLM: as appropriate as per Plan. To complete the task.\n"
-            "The 'COMMAND: ' prefix should be followed by the command to run using a CLI tool. The COMMAND statements may include creation, deletion, copying, moving, executing and in-place modification of files within the given scope.\n"
+            f"The 'COMMAND: ' prefix should be followed by the command to run using a CLI tool. The COMMAND statements may include creation, deletion, copying, moving, executing and in-place modification of files within the given scope. The COMMAND should be appropriate for the platform (platform.system()): {platform.system()}.\n"
             "Example 1: 'COMMAND: sed -i '' '/^$/d; s/^[QA]: //' test/example_1.txt'\n"
             "The 'LLM: ' prefix should be followed by a generated prompt which is <instruction> to modify the required files. The instructions, files_to_modify, context_files must be clearly seperated using <tags> followed by '{}'. The tags will be used to parse the message to be sent to the model. They should be in a readable format such as: 'LLM 'Carry out the <instruction>{instruction} to modify the contents of <files_to_modify>{files_to_modify} using information in <context_files>{context_files}.''\n" 
             "Example 2: 'LLM: <instruction>{'Extract the details of the project from README.md and the dependencies from requirements.txt and populate the fields in pyproject.toml'} of <files_to_modify>{'./pyproject.toml'} using information in <context_files>{'./pyproject.toml', './README.md', './requirements.txt'}.'\n" 
@@ -140,7 +140,7 @@ def get_instructions_and_files(prompt, scope):
             "DO NOT number the Execution Table.\n"
             "DO NOT include any additional explanation."
         )
-
+        
         # User message with prompt and scope of execution
         user_prompt = (
             f"Instruction: {prompt}\n\n"
