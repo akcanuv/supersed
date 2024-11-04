@@ -18,7 +18,7 @@ If you simply want to use `supersed`, install it from PyPI using.
    ```
    pip install supersed
    ```
-3. **Clone the Repository:**
+2. **Clone the Repository:**
 If you would like to contribute to `supersed`, consider cloning the github directory.
 
    ```
@@ -26,8 +26,8 @@ If you would like to contribute to `supersed`, consider cloning the github direc
    cd supersed
    pip install -e .
    ```
-5.	**Set Up OpenAI API Key:**
-Obtain your OpenAI API key from OpenAI and set it as an environment variable:
+3.	**Set Up OpenAI API Key:**
+Obtain your [OpenAI API Key](https://platform.openai.com/api-keys) from OpenAI and set it as an environment variable:
 - Linux/macOS:
 ```export OPENAI_API_KEY='your-api-key-here'```
 - Windows (Command Prompt):
