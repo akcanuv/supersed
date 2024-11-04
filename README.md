@@ -34,6 +34,7 @@ Obtain your [OpenAI API Key](https://platform.openai.com/api-keys) from OpenAI a
 ```set OPENAI_API_KEY=your-api-key-here```
 - Windows (PowerShell):
 ```$env:OPENAI_API_KEY="your-api-key-here"```
+Note that using the able step sets the API key as environment variables only temporarily. To set it permanently, add this statement to `.bashrc`, `.zshrc` or any other shell config file for the shell you're using.
 
 ## Usage
 
