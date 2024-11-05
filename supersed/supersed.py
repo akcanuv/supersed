@@ -127,16 +127,16 @@ def get_instructions_and_files(prompt, scope):
             "Under a section called 'Files to Modify/Create', provide an appropriate command using the scope that will display the relevant files needed to be modified or created when parsed, use `find`. When specifically asked to create a file, use `touch`. When specifically asked to update a file, use `find`.\n" 
             "Under a section called 'Context Files', provide an appropriate command using the scope that will display the relevant files needed to be read for context when parsed, use `find`. Files that are to be updated must also be included in the context.\n" 
             "Under a section called 'Execution Table' provide a single step or a sequence of steps to be executed sequentially either with a `COMMAND: ` or an `LLM: ` prefix.  You may chain any number or order of COMMAND: and LLM: as appropriate as per Plan. To complete the task.\n"
-            f"The 'COMMAND: ' prefix should be followed by the command to run using a CLI tool. The COMMAND statements may include creation, deletion, copying, moving, executing and in-place modification of files within the given scope. The COMMAND should be appropriate for the platform (platform.system()): {platform.system()}.\n"
+            "The 'COMMAND: ' prefix should be followed by the command to run using a CLI tool. The COMMAND statements may include creation, deletion, copying, moving, executing and in-place modification of files within the given scope.\n"
             "Example 1: 'COMMAND: sed -i '' '/^$/d; s/^[QA]: //' test/example_1.txt'\n"
             "The 'LLM: ' prefix should be followed by a generated prompt which is <instruction> to modify the required files. The instructions, files_to_modify, context_files must be clearly seperated using <tags> followed by '{}'. The tags will be used to parse the message to be sent to the model. They should be in a readable format such as: 'LLM 'Carry out the <instruction>{instruction} to modify the contents of <files_to_modify>{files_to_modify} using information in <context_files>{context_files}.''\n" 
             "Example 2: 'LLM: <instruction>{'Extract the details of the project from README.md and the dependencies from requirements.txt and populate the fields in pyproject.toml'} of <files_to_modify>{'./pyproject.toml'} using information in <context_files>{'./pyproject.toml', './README.md', './requirements.txt'}.'\n" 
             "Example 3: 'LLM: For each file in <context_files>{'001.txt', '002.txt', '003.txt',...}, run <instruction>{'Correct the grammatical errors in the provided text and provide just the updated test. Do not include any additional explanation.'} and replace the contexts in <files_to_modify>{'001.txt', '002.txt', '003.txt',...}.\n"
             "When processing more than one file with LLM, modify the <instruction> assuming it is only acting on one file at a time, so it should not reference any files in <instruction>.\n"
             "<context_files> and <files_to_modify> may be a `find` command for user instructions such as a file pattern or when 'all files' is mentioned, do not include quotes inside {'find ... '} when using the command, rather directly put the command in {} like {find ...}" 
-            "Provide clear sections for 'Plan', 'Files to Modify/Create', 'Context Files' and 'Execution Table'.\n"
+            "Provide clearly all the sections sections for 'Plan', 'Files to Modify/Create', 'Context Files' and 'Execution Table', even if there are no Files to Create/Modify and Context Files (default to None).\n"
             "DO NOT enclose any section with backticks like ```bash $cmd```.\n" 
-            "DO NOT include files in .backup and .git in 'Files to Modify/Create' or 'Context Files'\n when executing find use ! -path '*.backup*'"
+            "DO NOT include files in .backup in 'Files to Modify/Create' or 'Context Files'\n when executing find use ! -path '*.backup*'"
             "DO NOT number the Execution Table.\n"
             "DO NOT include any additional explanation."
         )
@@ -226,6 +226,9 @@ def execute_find_command(command_line: str) -> List[str]:
     Returns:
         List[str]: A list of file paths returned by the 'find' command(s) and created by 'touch' command(s).
     """
+    if command_line.startswith('None'):
+        return []
+    
     try:
         # Only proceed if command_line is valid and contains 'find' or 'touch'
         if not command_line or ("find" not in command_line and "touch" not in command_line):
@@ -479,7 +482,7 @@ def main():
 
     # Get plan, file change manifest, and instructions from LLM
     plan = get_instructions_and_files(prompt, args.scope)
-    print(plan)
+
     # Parse the plan to extract files to modify and context files
     files_to_modify, context_files, instructions, execution_table = parse_plan(plan)
     # Print the parsed output for verification
@@ -510,6 +513,7 @@ def main():
         print(f"{execution_table}")
     else:
         print("None (no execution commands provided)")
+    print()
 
     # Check if files are within the scope
     if not validate_scope(files_to_modify, args.scope) or not validate_scope(context_files, args.scope):
@@ -518,6 +522,7 @@ def main():
 
     # Only create backup if it doesn't already exist
     backup_files(files_to_modify)
+    print()
 
     print("Executing command(s) from Planner instructions:")
 
