@@ -7,6 +7,7 @@ import argparse
 import subprocess
 import glob
 import re
+import shlex
 import platform  
 from fnmatch import fnmatch
 from typing import List
@@ -50,13 +51,6 @@ def automatic_backup(files):
         os.makedirs(os.path.dirname(backup_path), exist_ok=True)
         shutil.copy(file, backup_path)
     print("Automatic backup created.")
-
-# Update the list of modified files in .modified_files.ss
-def update_modified_files(files):
-    modified_file_path = os.path.join('.backup', '.modified_files.ss')
-    with open(modified_file_path, 'w') as f:
-        for file in files:
-            f.write(file + '\n')
 
 # Save only recent changes or all files in scope if specified
 def save_backup(files, scope=None):
@@ -103,11 +97,6 @@ def restore_files(scope=None):
     
     print("\nFiles restored from backup.")
     update_modified_files(files_to_restore)
-
-def extract_filenames_from_text(text):
-    # Improved regex to find filenames with paths (e.g., test_files/file1.txt)
-    pattern = r'[\w./-]+\.\w+'
-    return re.findall(pattern, text)
 
 def read_file_contents(filenames):
     contents = {}
@@ -165,10 +154,6 @@ def get_instructions_and_files(prompt, scope):
         print(f"Error getting instructions from LLM: {e}")
         sys.exit(1)
 
-def extract_filenames_from_text(line):
-    # Extracts filenames from a line of text by searching for patterns like file paths
-    return re.findall(r'[./\w-]+(?:\.\w+)?', line)
-
 def parse_plan(plan):
     # Initialize lists for sections
     files_to_modify = []
@@ -216,114 +201,68 @@ def parse_plan(plan):
     return list(set(files_to_modify)), list(set(context_files)), instructions.strip(), execution_table.strip()
 
 def execute_find_command(command_line: str) -> List[str]:
-    """
-    Executes one or more 'find' and 'touch' commands extracted from the command_line string
-    and returns a list of matching or created file paths.
-
-    Args:
-        command_line (str): The input string containing the 'find' and/or 'touch' command(s).
-
-    Returns:
-        List[str]: A list of file paths returned by the 'find' command(s) and created by 'touch' command(s).
-    """
-    if command_line.startswith('None'):
+    if not command_line:
         return []
-    
-    try:
-        # Only proceed if command_line is valid and contains 'find' or 'touch'
-        if not command_line or ("find" not in command_line and "touch" not in command_line):
-            print(f"Skipping invalid command: {command_line}")
-            return []
-        
-        # Initialize a list to collect all found and created files
-        all_files = []
 
-        # Split the command_line into individual commands based on separators ';', '|', '&', or newlines
-        # This allows handling multiple commands in a single command_line string
-        commands = re.split(r'[;&|]', command_line)
+    # Split the command_line into individual commands based on ';' or newlines
+    commands = re.split(r'[;\n]', command_line)
 
-        for cmd in commands:
-            cmd = cmd.strip()
-            if not cmd:
-                continue  # Skip empty commands
+    all_files = []
 
-            # Remove leading numbering or labels (e.g., '1. ', '2) ', etc.)
-            # This regex removes any leading digits, followed by a dot or parenthesis and optional space
-            cmd = re.sub(r'^\d+[\.\)]\s*', '', cmd)
+    for cmd in commands:
+        cmd = cmd.strip()
+        if not cmd:
+            continue
 
-            if not cmd:
-                continue  # Skip if command is empty after stripping
+        # Remove leading numbering, labels, hyphens, and spaces
+        cmd = re.sub(r'^[-\s]*\d*[\.\)]?\s*', '', cmd)
 
-            # Check if the command is a 'find' command
-            if cmd.lower().startswith('find'):
-                try:
-                    # Execute the 'find' command and capture the output
-                    result = subprocess.run(
-                        cmd,
-                        shell=True,               # Execute through the shell
-                        text=True,                # Capture output as text
-                        capture_output=True,      # Capture stdout and stderr
-                        check=True                # Raise CalledProcessError on non-zero exit
-                    )
-                    
-                    # Split the output by lines to get individual file paths
-                    files = result.stdout.strip().split('\n')
-                    
-                    # Filter out any empty strings and extend to the all_files list
-                    valid_files = [file for file in files if file]
-                    all_files.extend(valid_files)
-                
-                except subprocess.CalledProcessError as e:
-                    print(f"Error executing 'find' command: {cmd}")
-                    print(f"Error message: {e.stderr.strip()}")
-                    continue  # Skip to the next command
-                
-            # Check if the command is a 'touch' command
-            elif cmd.lower().startswith('touch'):
-                try:
-                    # Extract the file paths from the 'touch' command
-                    # Use shlex.split to handle file paths with spaces and quotes
-                    import shlex
-                    touch_parts = shlex.split(cmd)
-                    
-                    # Remove 'touch' from the parts to get the file paths
-                    file_paths = touch_parts[1:]
-                    
-                    if not file_paths:
-                        print(f"No file paths specified in 'touch' command: {cmd}")
-                        continue  # Skip if no files are specified
-                    
-                    # Execute the 'touch' command to create the files
-                    subprocess.run(
-                        cmd,
-                        shell=True,
-                        check=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE
-                    )
-                    
-                    # Add the created file paths to the all_files list
-                    all_files.extend(file_paths)
-                
-                except subprocess.CalledProcessError as e:
-                    print(f"Error executing 'touch' command: {cmd}")
-                    print(f"Error message: {e.stderr.strip()}")
-                    continue  # Skip to the next command
-                except ValueError as ve:
-                    print(f"Error parsing 'touch' command: {cmd}")
-                    print(f"Error message: {str(ve)}")
-                    continue  # Skip to the next command
-            
-            else:
-                # If the command is neither 'find' nor 'touch', skip it
-                print(f"Unsupported command skipped: {cmd}")
-                continue
-        
-        return all_files
+        if not cmd:
+            continue
 
-    except Exception as e:
-        print(f"Unexpected error: {str(e)}")
-        return []
+        # Use shlex to split the command into tokens
+        tokens = shlex.split(cmd)
+
+        if not tokens:
+            continue
+
+        command_name = tokens[0].lower()
+
+        if command_name == 'find':
+            try:
+                # Execute the 'find' command and capture the output
+                result = subprocess.run(
+                    cmd,
+                    shell=True,
+                    text=True,
+                    capture_output=True,
+                    check=True
+                )
+                # Add the found file paths to the all_files list
+                files = result.stdout.strip().split('\n')
+                all_files.extend(filter(None, files))
+            except subprocess.CalledProcessError as e:
+                print(f"Error executing 'find' command: {cmd}")
+                print(f"Error message: {e.stderr.strip()}")
+        elif command_name == 'touch':
+            try:
+                # Execute the 'touch' command
+                subprocess.run(
+                    cmd,
+                    shell=True,
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                # Add the touched file paths to the all_files list
+                all_files.extend(tokens[1:])
+            except subprocess.CalledProcessError as e:
+                print(f"Error executing 'touch' command: {cmd}")
+                print(f"Error message: {e.stderr.strip()}")
+        else:
+            print(f"Unsupported command skipped: {cmd}")
+
+    return all_files
 
 def strip_outer_quotes(text):
     # Check if the string starts and ends with the same quote character (either " or ')
