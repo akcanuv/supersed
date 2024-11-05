@@ -1,5 +1,5 @@
 # supersed
-<img src="https://github.com/user-attachments/assets/630809b4-369b-4e88-8f92-5f926aff72b6" width="300" />
+<img src="https://github.com/akcanuv/supersed/blob/main/logo.png" width="300" />
 
 **supersed** is a natural language-powered file editor that leverages LLMs to perform various file manipulations on txt or txt-like files based on user instructions. Simplify your workflow by managing and editing your text files using plain English commands. No more googling for the right commands!
 
