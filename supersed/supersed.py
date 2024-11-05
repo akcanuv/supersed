@@ -136,7 +136,7 @@ def get_instructions_and_files(prompt, scope):
             "<context_files> and <files_to_modify> may be a `find` command for user instructions such as a file pattern or when 'all files' is mentioned, do not include quotes inside {'find ... '} when using the command, rather directly put the command in {} like {find ...}" 
             "Provide clear sections for 'Plan', 'Files to Modify/Create', 'Context Files' and 'Execution Table'.\n"
             "DO NOT enclose any section with backticks like ```bash $cmd```.\n" 
-            "DO NOT include files in .backup in 'Files to Modify/Create' or 'Context Files'\n when executing find use ! -path '*.backup*'"
+            "DO NOT include files in .backup and .git in 'Files to Modify/Create' or 'Context Files'\n when executing find use ! -path '*.backup*'"
             "DO NOT number the Execution Table.\n"
             "DO NOT include any additional explanation."
         )
