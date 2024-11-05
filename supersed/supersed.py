@@ -52,22 +52,6 @@ def automatic_backup(files):
         shutil.copy(file, backup_path)
     print("Automatic backup created.")
 
-# Save only recent changes or all files in scope if specified
-def save_backup(files, scope=None):
-    backup_dir = os.path.join(os.getcwd(), '.backup')
-    os.makedirs(backup_dir, exist_ok=True)
-    for file in files:
-        backup_path = os.path.join(backup_dir, file)
-        os.makedirs(os.path.dirname(backup_path), exist_ok=True)
-        shutil.copy(file, backup_path)
-    
-    if scope is None:
-        print("Backup updated with current file versions (recent changes only).")
-    else:
-        print("Backup updated with current file versions (all files in scope).")
-    
-    update_modified_files(files)
-
 # Restore recent changes or all files in scope if specified
 def restore_files(scope=None):
     backup_dir = os.path.join(os.getcwd(), '.backup')
@@ -201,7 +185,7 @@ def parse_plan(plan):
     return list(set(files_to_modify)), list(set(context_files)), instructions.strip(), execution_table.strip()
 
 def execute_find_command(command_line: str) -> List[str]:
-    if not command_line:
+    if not command_line or command_line.strip() == 'None':
         return []
 
     # Split the command_line into individual commands based on ';' or newlines
@@ -359,16 +343,12 @@ def process_with_llm(prompt, content, context_contents):
         print(f"Error processing with LLM: {e}")
         return content  # Return original content if there's an error
 
-def get_target_files(file_patterns):
-    if file_patterns:
-        # If specific file patterns are provided, use them with recursive glob
-        files = []
-        for pattern in file_patterns:
-            files.extend(glob(pattern, recursive=True))
-    else:
-        # No files specified, return empty list
-        files = []
-    return list(set(files))
+def get_target_files(scope_patterns):
+    files = []
+    for pattern in scope_patterns:
+        matched_files = glob.glob(pattern, recursive=True)
+        files.extend([f for f in matched_files if os.path.isfile(f)])
+    return files
 
 def adjust_command(cmd):
     os_type = platform.system()
@@ -402,16 +382,9 @@ def main():
     )
     args = parser.parse_args()
 
-    # Handle restore and save commands
+    # Handle restore command
     if 'restore' in args.command:
         restore_files()
-        sys.exit(0)
-    elif 'save' in args.command:
-        files = get_target_files(args.scope)
-        if not files:
-            print("No target files found to save.")
-            sys.exit(1)
-        save_backup(files)
         sys.exit(0)
 
     # Combine command line arguments into a prompt
