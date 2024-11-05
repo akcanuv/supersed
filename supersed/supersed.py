@@ -399,7 +399,7 @@ def process_with_llm(prompt, content, context_contents):
 
         # Add the content to modify at the end with a clear heading
         full_prompt += f"\n### Content to Modify\n{content}\n"
-
+        # print("Full prompt: ", full_prompt)
         # Call the LLM API
         response = client.chat.completions.create(
             model="gpt-4o",
@@ -407,12 +407,13 @@ def process_with_llm(prompt, content, context_contents):
                 {"role": "system", "content": (
                     "You are a helpful assistant that edits text files based on user instructions."
                     " Apply the user's instruction to the provided content and return only the modified content without additional explanations."
+                    "Do not include any Markdown formatting or code blocks in your response."
                 )},
                 {"role": "user", "content": full_prompt}
             ],
             temperature=0
         )
-
+        # print("LLM response: ", response.choices[0].message.content)
         # Return the modified content
         return response.choices[0].message.content
     except Exception as e:
