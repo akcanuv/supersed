@@ -482,7 +482,7 @@ def main():
 
     # Get plan, file change manifest, and instructions from LLM
     plan = get_instructions_and_files(prompt, args.scope)
-    print(plan)
+    # print(plan)
     # Parse the plan to extract files to modify and context files
     files_to_modify, context_files, instructions, execution_table = parse_plan(plan)
     # Print the parsed output for verification
